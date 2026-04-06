@@ -4,7 +4,7 @@
 {% block title %}My Book Tree — The Reading Journey{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406e">
+<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406d">
 {% endblock %}
 
 {% block body %}
@@ -43,36 +43,16 @@
       <filter id="shadow">
         <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.5)"/>
       </filter>
-      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#183a49"/>
-        <stop offset="35%" stop-color="#12313e"/>
-        <stop offset="70%" stop-color="#0d2531"/>
-        <stop offset="100%" stop-color="#081a24"/>
-      </linearGradient>
-      <linearGradient id="fogGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="rgba(105, 182, 169, 0.00)"/>
-        <stop offset="55%" stop-color="rgba(105, 182, 169, 0.06)"/>
-        <stop offset="100%" stop-color="rgba(105, 182, 169, 0.12)"/>
-      </linearGradient>
-      <pattern id="mistPattern" width="160" height="160" patternUnits="userSpaceOnUse">
-        <circle cx="18" cy="20" r="2.2" fill="rgba(179, 224, 211, 0.08)"/>
-        <circle cx="90" cy="74" r="1.8" fill="rgba(179, 224, 211, 0.06)"/>
-        <circle cx="136" cy="36" r="1.4" fill="rgba(179, 224, 211, 0.06)"/>
-        <circle cx="46" cy="126" r="2.4" fill="rgba(179, 224, 211, 0.07)"/>
-      </pattern>
+      <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+        <stop offset="0%" stop-color="#1e4f3c"/>
+        <stop offset="55%" stop-color="#12392c"/>
+        <stop offset="100%" stop-color="#071f19"/>
+      </radialGradient>
     </defs>
     <!-- Background -->
     <rect id="bgRect" fill="url(#bgGrad)"/>
-    <rect width="100%" height="100%" fill="url(#mistPattern)" opacity="0.45"></rect>
-    <rect width="100%" height="100%" fill="url(#fogGrad)"></rect>
-    <g id="forestBackdrop" pointer-events="none">
-      <path d="M0,83 C12,75 22,80 33,72 C45,63 53,66 66,60 C78,54 87,57 100,51 L100,100 L0,100 Z"
-            fill="rgba(15, 52, 47, 0.45)"/>
-      <path d="M0,91 C10,86 21,89 31,84 C44,77 56,80 68,74 C80,68 89,72 100,66 L100,100 L0,100 Z"
-            fill="rgba(11, 41, 39, 0.58)"/>
-      <path d="M0,100 L0,94 C8,90 15,92 20,88 C26,84 29,85 35,82 C39,79 43,80 46,77 C49,74 54,75 58,70 C61,66 64,67 68,63 C72,60 75,61 80,58 C85,55 88,56 93,52 C96,50 98,50 100,48 L100,100 Z"
-            fill="rgba(8, 27, 30, 0.72)"/>
-    </g>
+    <!-- Forest atmosphere layer -->
+    <g id="forestBackdrop"></g>
     <!-- Tree links layer -->
     <g id="linksLayer"></g>
     <!-- Tree nodes layer -->
@@ -215,6 +195,30 @@
             <input type="color" id="fBorder" value="#4fc3f7">
           </div>
         </div>
+        <div class="style-grid">
+          <div class="form-group">
+            <label>Parent Edge Color</label>
+            <input type="color" id="fParentEdgeColor" value="#74d39f">
+          </div>
+          <div class="form-group">
+            <label>Parent Edge Style</label>
+            <select id="fParentEdgeStyle">
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+              <option value="dash-dot">Dash Dot</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Parent Edge Width</label>
+            <select id="fParentEdgeWidth">
+              <option value="2">Thin</option>
+              <option value="3" selected>Normal</option>
+              <option value="4">Bold</option>
+              <option value="6">Heavy</option>
+            </select>
+          </div>
+        </div>
         <div class="form-group">
           <label>Badges</label>
           <div class="badge-picker" id="badgePicker">
@@ -246,7 +250,9 @@
   <div id="sidebarContent"></div>
 </div>
 
+<div id="toastHost" aria-live="polite" aria-atomic="true"></div>
+
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'js/tree_viz.js' %}?v=20260406e"></script>
-<script src="{% static 'js/tree_modal.js' %}?v=20260406e"></script>
+<script src="{% static 'js/tree_viz.js' %}?v=20260406d"></script>
+<script src="{% static 'js/tree_modal.js' %}?v=20260406d"></script>
 {% endblock %}
