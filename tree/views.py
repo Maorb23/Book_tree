@@ -131,9 +131,17 @@ def edge_list(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['DELETE'])
+@api_view(['PATCH', 'DELETE'])
 def edge_detail(request, pk):
     edge = get_object_or_404(Edge, pk=pk)
+
+    if request.method == 'PATCH':
+        serializer = EdgeSerializer(edge, data=request.data, partial=True)
+        if serializer.is_valid():
+            saved = serializer.save()
+            return Response(EdgeSerializer(saved).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     edge.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
