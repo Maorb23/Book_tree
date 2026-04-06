@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My Book Tree — The Reading Journey{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/tree.css' %}">
+{% endblock %}
+
+{% block body %}
+<!-- TOP NAVIGATION -->
+<header class="topbar">
+  <a href="{% url 'tree:landing' %}" class="topbar__logo">
+    <span>🌳</span>
+    <span class="topbar__logo-text">The Reading Journey</span>
+  </a>
+  <div class="topbar__search">
+    <input type="text" id="searchInput" placeholder="Search your tree…" autocomplete="off">
+    <div id="searchResults" class="search-dropdown"></div>
+  </div>
+  <div class="topbar__actions">
+    <button class="btn btn--primary" id="addBookBtn">+ Add Book</button>
+    <button class="btn btn--ghost" id="addNodeBtn">+ Node</button>
+  </div>
+</header>
+
+<!-- MAIN CANVAS -->
+<main class="canvas-wrap">
+  <svg id="treeCanvas">
+    <defs>
+      <filter id="glow-blue">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-purple">
+        <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-green">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="shadow">
+        <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.5)"/>
+      </filter>
+      <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
+        <stop offset="0%" stop-color="#113457"/>
+        <stop offset="55%" stop-color="#0c2540"/>
+        <stop offset="100%" stop-color="#061321"/>
+      </radialGradient>
+    </defs>
+    <!-- Background -->
+    <rect id="bgRect" fill="url(#bgGrad)"/>
+    <!-- Tree links layer -->
+    <g id="linksLayer"></g>
+    <!-- Tree nodes layer -->
+    <g id="nodesLayer"></g>
+  </svg>
+
+  <!-- MINIMAP -->
+  <div class="minimap" id="minimap">
+    <div class="minimap__header">Overview</div>
+    <svg id="minimapSvg"></svg>
+    <div id="minimapViewport" class="minimap__viewport"></div>
+  </div>
+
+  <!-- ZOOM CONTROLS -->
+  <div class="zoom-controls">
+    <button id="zoomIn" title="Zoom in">+</button>
+    <button id="zoomReset" title="Reset view">⊙</button>
+    <button id="zoomOut" title="Zoom out">−</button>
+  </div>
+
+  <!-- BOTTOM FLOATING BAR (appears when scrolled) -->
+  <div class="float-bar" id="floatBar">
+    <button class="float-btn" id="scrollTopBtn" title="Go to top">↑ Top</button>
+    <button class="float-btn" id="expandAllBtn">⊞ Expand All</button>
+    <button class="float-btn" id="collapseAllBtn">⊟ Collapse All</button>
+    <button class="float-btn float-btn--primary" id="floatAddBook">+ Book</button>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <p>Growing your tree…</p>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <div class="empty-state" id="emptyState" style="display:none">
+    <div class="empty-state__icon">🌱</div>
+    <h2>Your tree is empty</h2>
+    <p>Add your first book to start growing your reading journey.</p>
+    <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Book</button>
+  </div>
+</main>
+
+<!-- ─── MODALS ─────────────────────────────── -->
+
+<!-- ADD / EDIT BOOK MODAL -->
+<div class="modal-overlay" id="bookModal">
+  <div class="modal">
+    <div class="modal__header">
+      <h3 id="modalTitle">Add New Book</h3>
+      <button class="modal__close" id="closeBookModal">✕</button>
+    </div>
+    <div class="modal__body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Title *</label>
+          <input type="text" id="fTitle" placeholder="e.g. The Hobbit" required>
+        </div>
+        <div class="form-group">
+          <label>Author</label>
+          <input type="text" id="fAuthor" placeholder="e.g. J.R.R. Tolkien">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Genre</label>
+          <input type="text" id="fGenre" list="genreSuggestions" placeholder="e.g. Fantasy">
+          <datalist id="genreSuggestions">
+            <option>Fantasy</option><option>Science Fiction</option>
+            <option>Mystery</option><option>Thriller</option>
+            <option>Classic</option><option>Romance</option>
+            <option>Horror</option><option>Non-Fiction</option>
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="number" id="fYear" placeholder="e.g. 1937" min="0" max="2030">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>ISBN</label>
+          <input type="text" id="fIsbn" placeholder="e.g. 9780261102217">
+        </div>
+        <div class="form-group">
+          <label>Rating (0–5)</label>
+          <input type="number" id="fRating" min="0" max="5" step="0.5" placeholder="4.5">
+        </div>
+      </div>
+      <!-- Cover preview -->
+      <div class="form-group">
+        <label>Cover Image</label>
+        <div class="cover-picker">
+          <div class="cover-picker__preview" id="coverPreview">
+            <span>No cover</span>
+          </div>
+          <div class="cover-picker__controls">
+            <button type="button" class="btn btn--ghost btn--sm" id="fetchCoverBtn">🔍 Auto-fetch</button>
+            <input type="url" id="fCoverUrl" placeholder="Paste image URL…">
+            <input type="file" id="fCoverFile" accept="image/*" style="display:none">
+            <button type="button" class="btn btn--ghost btn--sm" id="uploadCoverBtn">📁 Upload</button>
+          </div>
+        </div>
+      </div>
+      <!-- Parent connection -->
+      <div class="form-group">
+        <label>Connect to (parent node)</label>
+        <select id="fParent">
+          <option value="">— root (no parent) —</option>
+        </select>
+      </div>
+      <!-- Node type -->
+      <div class="form-group">
+        <label>Node Type</label>
+        <div class="type-buttons" id="typeButtons">
+          <button type="button" class="type-btn active" data-type="book">📖 Book</button>
+          <button type="button" class="type-btn" data-type="author">✍️ Author</button>
+          <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
+          <button type="button" class="type-btn" data-type="series">📚 Series</button>
+          <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
+        </div>
+      </div>
+      <!-- Style -->
+      <details class="style-panel">
+        <summary>🎨 Customize Appearance</summary>
+        <div class="style-grid">
+          <div class="form-group">
+            <label>Node Color</label>
+            <input type="color" id="fColor" value="#1a3a5c">
+          </div>
+          <div class="form-group">
+            <label>Glow Color</label>
+            <input type="color" id="fGlow" value="#4fc3f7">
+          </div>
+          <div class="form-group">
+            <label>Border Color</label>
+            <input type="color" id="fBorder" value="#4fc3f7">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Badges</label>
+          <div class="badge-picker" id="badgePicker">
+            <span class="badge-opt" data-badge="⭐">⭐ Favorite</span>
+            <span class="badge-opt" data-badge="🔥">🔥 Must Read</span>
+            <span class="badge-opt" data-badge="📚">📚 Series</span>
+            <span class="badge-opt" data-badge="🏆">🏆 Award</span>
+            <span class="badge-opt" data-badge="💡">💡 Insight</span>
+            <span class="badge-opt" data-badge="🌍">🌍 World-building</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="fNotes" rows="3" placeholder="Personal notes about this book…"></textarea>
+        </div>
+      </details>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--ghost" id="cancelBookModal">Cancel</button>
+      <button class="btn btn--danger" id="deleteNodeBtn" style="display:none">Delete</button>
+      <button class="btn btn--primary" id="saveBookBtn">Save Book</button>
+    </div>
+  </div>
+</div>
+
+<!-- NODE INFO SIDEBAR -->
+<div class="sidebar" id="sidebar">
+  <button class="sidebar__close" id="closeSidebar">✕</button>
+  <div id="sidebarContent"></div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{% static 'js/tree_viz.js' %}"></script>
+<script src="{% static 'js/tree_modal.js' %}"></script>
+{% endblock %}

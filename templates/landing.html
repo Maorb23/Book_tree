@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}The Reading Journey — Grow Your Books{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/landing.css' %}">
+{% endblock %}
+
+{% block body %}
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav__logo">
+    <span class="nav__icon">🌳</span>
+    <span class="nav__name">The Reading Journey</span>
+  </div>
+  <div class="nav__links">
+    <a href="#features">Features</a>
+    <a href="#preview">Preview</a>
+    <a href="{% url 'tree:tree' %}" class="nav__cta">Open My Tree</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero__bg" id="heroBg"></div>
+  <div class="hero__content">
+    <h1 class="hero__title">
+      Grow Your<br>
+      <span class="hero__title--accent">Reading Journey</span>
+    </h1>
+    <p class="hero__sub">
+      Turn every book you read into a living knowledge tree.<br>
+      Discover connections, track your path, and explore worlds.
+    </p>
+    <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">
+      🌱 Start Your Reading Journey
+    </a>
+  </div>
+  <!-- Floating book particles -->
+  <div class="hero__books" id="heroBooks"></div>
+</section>
+
+<!-- ANIMATED PREVIEW -->
+<section class="preview" id="preview">
+  <div class="preview__inner">
+    <h2 class="section-title">Your Tree, Growing</h2>
+    <p class="section-sub">Watch your reading history bloom into an interconnected tree of knowledge</p>
+    <div class="preview__canvas" id="previewCanvas">
+      <canvas id="miniTree"></canvas>
+      <div class="preview__overlay">
+        <a href="{% url 'tree:tree' %}" class="btn btn--ghost">Explore Full Tree →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="features__inner">
+    <h2 class="section-title">Everything You Need</h2>
+    <div class="features__grid">
+      <div class="feature-card">
+        <div class="feature-card__icon">🗺️</div>
+        <h3>Visual Reading Map</h3>
+        <p>See your entire reading history at a glance. Each book a node, each connection a branch.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">🔗</div>
+        <h3>Discover Connections</h3>
+        <p>Link books by genre, author, series, or your own custom relationships.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">🎨</div>
+        <h3>Customize Everything</h3>
+        <p>Color your nodes, add badges, glows, and personal notes to each book.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">🔍</div>
+        <h3>Zoom & Explore</h3>
+        <p>Pan, zoom, and navigate through hundreds of books with smooth performance.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">📚</div>
+        <h3>Auto Book Covers</h3>
+        <p>Book covers fetched automatically from Google Books and OpenLibrary.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card__icon">🌿</div>
+        <h3>Living Tree</h3>
+        <p>As you read more, your tree grows. Watch it evolve into a forest of knowledge.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="stats">
+  <div class="stats__inner">
+    <div class="stat">
+      <span class="stat__num">100+</span>
+      <span class="stat__label">Books Supported</span>
+    </div>
+    <div class="stat">
+      <span class="stat__num">5</span>
+      <span class="stat__label">Node Types</span>
+    </div>
+    <div class="stat">
+      <span class="stat__num">∞</span>
+      <span class="stat__label">Connections</span>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-section">
+  <h2>Ready to Grow Your Tree?</h2>
+  <p>Your reading journey starts with a single leaf.</p>
+  <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">
+    🌳 Start Now — It's Free
+  </a>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <span>🌳 The Reading Journey</span>
+  <span>Built with Django & D3.js</span>
+</footer>
+
+<script src="{% static 'js/landing.js' %}"></script>
+{% endblock %}
