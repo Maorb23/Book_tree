@@ -27,6 +27,30 @@ class NodeSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
         return url
 
+    def validate(self, attrs):
+        """Protect tree integrity: disallow self-parent and cycles."""
+        parent = attrs.get('parent', serializers.empty)
+        if parent is serializers.empty:
+            return attrs
+
+        instance = getattr(self, 'instance', None)
+        if instance is None:
+            return attrs
+
+        if parent is None:
+            return attrs
+
+        if parent.id == instance.id:
+            raise serializers.ValidationError({'parent': 'A node cannot be its own parent.'})
+
+        cursor = parent
+        while cursor is not None:
+            if cursor.id == instance.id:
+                raise serializers.ValidationError({'parent': 'This move creates a cycle in the tree.'})
+            cursor = cursor.parent
+
+        return attrs
+
 
 class EdgeSerializer(serializers.ModelSerializer):
     class Meta:

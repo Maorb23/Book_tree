@@ -4,7 +4,7 @@
 {% block title %}My Book Tree — The Reading Journey{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/tree.css' %}">
+<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406b">
 {% endblock %}
 
 {% block body %}
@@ -19,7 +19,7 @@
     <div id="searchResults" class="search-dropdown"></div>
   </div>
   <div class="topbar__actions">
-    <button class="btn btn--primary" id="addBookBtn">+ Add Book</button>
+    <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
     <button class="btn btn--ghost" id="addNodeBtn">+ Node</button>
   </div>
 </header>
@@ -76,7 +76,7 @@
     <button class="float-btn" id="scrollTopBtn" title="Go to top">↑ Top</button>
     <button class="float-btn" id="expandAllBtn">⊞ Expand All</button>
     <button class="float-btn" id="collapseAllBtn">⊟ Collapse All</button>
-    <button class="float-btn float-btn--primary" id="floatAddBook">+ Book</button>
+    <button class="float-btn float-btn--primary" id="floatAddBook">+ Node</button>
   </div>
 
   <!-- LOADING -->
@@ -90,7 +90,7 @@
     <div class="empty-state__icon">🌱</div>
     <h2>Your tree is empty</h2>
     <p>Add your first book to start growing your reading journey.</p>
-    <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Book</button>
+    <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Node</button>
   </div>
 </main>
 
@@ -100,14 +100,26 @@
 <div class="modal-overlay" id="bookModal">
   <div class="modal">
     <div class="modal__header">
-      <h3 id="modalTitle">Add New Book</h3>
+      <h3 id="modalTitle">ADD NEW NODE</h3>
       <button class="modal__close" id="closeBookModal">✕</button>
     </div>
     <div class="modal__body">
+      <!-- Node type -->
+      <div class="form-group">
+        <label>Node Type</label>
+        <div class="type-buttons" id="typeButtons">
+          <button type="button" class="type-btn active" data-type="book">📖 Book</button>
+          <button type="button" class="type-btn" data-type="author">✍️ Author</button>
+          <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
+          <button type="button" class="type-btn" data-type="series">📚 Series</button>
+          <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label>Title *</label>
-          <input type="text" id="fTitle" placeholder="e.g. The Hobbit" required>
+          <input type="text" id="fTitle" list="bookSuggestions" placeholder="e.g. The Hobbit" required>
+          <datalist id="bookSuggestions"></datalist>
         </div>
         <div class="form-group">
           <label>Author</label>
@@ -162,17 +174,6 @@
           <option value="">— root (no parent) —</option>
         </select>
       </div>
-      <!-- Node type -->
-      <div class="form-group">
-        <label>Node Type</label>
-        <div class="type-buttons" id="typeButtons">
-          <button type="button" class="type-btn active" data-type="book">📖 Book</button>
-          <button type="button" class="type-btn" data-type="author">✍️ Author</button>
-          <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
-          <button type="button" class="type-btn" data-type="series">📚 Series</button>
-          <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
-        </div>
-      </div>
       <!-- Style -->
       <details class="style-panel">
         <summary>🎨 Customize Appearance</summary>
@@ -210,7 +211,7 @@
     <div class="modal__footer">
       <button class="btn btn--ghost" id="cancelBookModal">Cancel</button>
       <button class="btn btn--danger" id="deleteNodeBtn" style="display:none">Delete</button>
-      <button class="btn btn--primary" id="saveBookBtn">Save Book</button>
+      <button class="btn btn--primary" id="saveBookBtn">Save Node</button>
     </div>
   </div>
 </div>
@@ -222,6 +223,6 @@
 </div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'js/tree_viz.js' %}"></script>
-<script src="{% static 'js/tree_modal.js' %}"></script>
+<script src="{% static 'js/tree_viz.js' %}?v=20260406b"></script>
+<script src="{% static 'js/tree_modal.js' %}?v=20260406b"></script>
 {% endblock %}

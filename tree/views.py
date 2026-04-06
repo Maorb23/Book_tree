@@ -100,6 +100,44 @@ def node_detail(request, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['GET', 'POST'])
+def edge_list(request):
+    if request.method == 'GET':
+        edges = Edge.objects.all()
+        serializer = EdgeSerializer(edges, many=True)
+        return Response(serializer.data)
+
+    serializer = EdgeSerializer(data=request.data)
+    if serializer.is_valid():
+        source = serializer.validated_data['source']
+        target = serializer.validated_data['target']
+        edge_type = serializer.validated_data.get('edge_type', 'custom')
+
+        if source.id == target.id:
+            return Response(
+                {'detail': 'Source and target must be different nodes.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if Edge.objects.filter(source=source, target=target, edge_type=edge_type).exists():
+            return Response(
+                {'detail': 'This connection already exists.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        edge = serializer.save()
+        return Response(EdgeSerializer(edge).data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+def edge_detail(request, pk):
+    edge = get_object_or_404(Edge, pk=pk)
+    edge.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 # ──────────────────────────────────────────────
 # Cover image lookup
 # ──────────────────────────────────────────────
@@ -117,6 +155,86 @@ def fetch_cover(request):
         url = _fetch_cover_google(title, author)
 
     return Response({'cover_url': url or ''})
+
+
+@api_view(['GET'])
+def search_books(request):
+    """Autocomplete books by title and return metadata, including ISBN."""
+    query = (request.query_params.get('q') or '').strip()
+    if len(query) < 2:
+        return Response({'results': []})
+
+    try:
+        resp = requests.get(
+            'https://www.googleapis.com/books/v1/volumes',
+            params={
+                'q': f'intitle:{query}',
+                'maxResults': 8,
+                'printType': 'books',
+            },
+            timeout=6,
+        )
+        data = resp.json()
+        items = data.get('items', [])
+
+        results = []
+        for item in items:
+            info = item.get('volumeInfo', {})
+            title = (info.get('title') or '').strip()
+            if not title:
+                continue
+
+            authors = info.get('authors') or []
+            categories = info.get('categories') or []
+            published = info.get('publishedDate') or ''
+            year = (published[:4] if published else '')
+            desc = info.get('description') or ''
+
+            isbn_13 = ''
+            isbn_10 = ''
+            for ident in info.get('industryIdentifiers') or []:
+                t = ident.get('type')
+                v = (ident.get('identifier') or '').replace('-', '').strip()
+                if t == 'ISBN_13' and not isbn_13:
+                    isbn_13 = v
+                elif t == 'ISBN_10' and not isbn_10:
+                    isbn_10 = v
+            isbn = isbn_13 or isbn_10
+
+            image_links = info.get('imageLinks') or {}
+            cover_url = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
+            if cover_url:
+                cover_url = cover_url.replace('http://', 'https://').replace('&zoom=1', '&zoom=2')
+
+            author_text = ', '.join(authors).strip() or 'Unknown author'
+            has_author = 0 if author_text == 'Unknown author' else 1
+            has_cover = 1 if cover_url else 0
+
+            results.append({
+                'title': title,
+                'author': author_text,
+                'genre': categories[0] if categories else '',
+                'year': year,
+                'isbn': isbn,
+                'cover_url': cover_url,
+                'description': desc,
+                '_score': has_cover * 4 + has_author * 2,
+            })
+
+        # Prefer suggestions with complete metadata (cover + author) and keep deterministic ordering.
+        ranked = sorted(
+            results,
+            key=lambda r: (r.get('_score', 0), len(r.get('author', ''))),
+            reverse=True,
+        )
+        cleaned = []
+        for row in ranked:
+            row.pop('_score', None)
+            cleaned.append(row)
+
+        return Response({'results': cleaned})
+    except Exception:
+        return Response({'results': []})
 
 
 def _fetch_cover_google(title, author=''):
