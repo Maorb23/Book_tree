@@ -1,4 +1,4 @@
-# Book Tree
+# Readwoods
 
 Interactive Django app for organizing books as a visual reading tree.
 

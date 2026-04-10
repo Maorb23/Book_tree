@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}The Reading Journey — Grow Your Books{% endblock %}
+{% block title %}Readwoods — Grow Your Books{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/landing.css' %}">
@@ -11,8 +11,10 @@
 <!-- NAV -->
 <nav class="nav">
   <div class="nav__logo">
-    <span class="nav__icon">🌳</span>
-    <span class="nav__name">The Reading Journey</span>
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
   </div>
   <div class="nav__links">
     <a href="#features">Features</a>
@@ -34,7 +36,7 @@
       Discover connections, track your path, and explore worlds.
     </p>
     <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">
-      🌱 Start Your Reading Journey
+      🌱 Start with Readwoods
     </a>
   </div>
   <!-- Floating book particles -->
@@ -123,7 +125,7 @@
 
 <!-- FOOTER -->
 <footer class="footer">
-  <span>🌳 The Reading Journey</span>
+  <span>Readwoods</span>
   <span>Built with Django & D3.js</span>
 </footer>
 

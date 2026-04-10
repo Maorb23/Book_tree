@@ -1,18 +1,20 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}My Book Tree — The Reading Journey{% endblock %}
+{% block title %}Readwoods — My Book Tree{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406d">
+<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406e">
 {% endblock %}
 
 {% block body %}
 <!-- TOP NAVIGATION -->
 <header class="topbar">
   <a href="{% url 'tree:landing' %}" class="topbar__logo">
-    <span>🌳</span>
-    <span class="topbar__logo-text">The Reading Journey</span>
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="34" height="34" loading="eager" decoding="async">
+    </span>
+    <span class="topbar__logo-text">Readwoods</span>
   </a>
   <div class="topbar__search">
     <input type="text" id="searchInput" placeholder="Search your tree…" autocomplete="off">
@@ -59,8 +61,6 @@
     <g id="nodesLayer"></g>
   </svg>
 
-  <div class="toast-container position-fixed top-0 end-0 p-3" id="toastHost" style="z-index: 1200;"></div>
-
   <!-- MINIMAP -->
   <div class="minimap" id="minimap">
     <div class="minimap__header">Overview</div>
@@ -93,7 +93,7 @@
   <div class="empty-state" id="emptyState" style="display:none">
     <div class="empty-state__icon">🌱</div>
     <h2>Your tree is empty</h2>
-    <p>Add your first book to start growing your reading journey.</p>
+    <p>Add your first book to start growing your Readwoods tree.</p>
     <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Node</button>
   </div>
 </main>
@@ -197,11 +197,11 @@
         </div>
         <div class="style-grid">
           <div class="form-group">
-            <label>Parent Edge Color</label>
+            <label>Parent Connection Color</label>
             <input type="color" id="fParentEdgeColor" value="#74d39f">
           </div>
           <div class="form-group">
-            <label>Parent Edge Style</label>
+            <label>Parent Connection Style</label>
             <select id="fParentEdgeStyle">
               <option value="solid">Solid</option>
               <option value="dashed">Dashed</option>
@@ -210,7 +210,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label>Parent Edge Width</label>
+            <label>Parent Connection Width</label>
             <select id="fParentEdgeWidth">
               <option value="2">Thin</option>
               <option value="3" selected>Normal</option>
@@ -253,6 +253,6 @@
 <div id="toastHost" aria-live="polite" aria-atomic="true"></div>
 
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'js/tree_viz.js' %}?v=20260406d"></script>
-<script src="{% static 'js/tree_modal.js' %}?v=20260406d"></script>
+<script src="{% static 'js/tree_viz.js' %}?v=20260406e"></script>
+<script src="{% static 'js/tree_modal.js' %}?v=20260406e"></script>
 {% endblock %}

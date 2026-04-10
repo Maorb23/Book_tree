@@ -1,14 +1,19 @@
 import requests
+import logging
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.core.cache import cache
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
 from .models import Node, Edge
 from .serializers import NodeSerializer, EdgeSerializer
+
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────
@@ -172,77 +177,147 @@ def search_books(request):
     if len(query) < 2:
         return Response({'results': []})
 
+    cache_key = f"book-search:{query.lower()}"
+    cached_results = cache.get(cache_key)
+    if cached_results is not None:
+        return Response({'results': cached_results})
+
     try:
-        resp = requests.get(
-            'https://www.googleapis.com/books/v1/volumes',
-            params={
-                'q': f'intitle:{query}',
-                'maxResults': 8,
-                'printType': 'books',
-            },
-            timeout=6,
-        )
-        data = resp.json()
-        items = data.get('items', [])
-
-        results = []
-        for item in items:
-            info = item.get('volumeInfo', {})
-            title = (info.get('title') or '').strip()
-            if not title:
-                continue
-
-            authors = info.get('authors') or []
-            categories = info.get('categories') or []
-            published = info.get('publishedDate') or ''
-            year = (published[:4] if published else '')
-            desc = info.get('description') or ''
-
-            isbn_13 = ''
-            isbn_10 = ''
-            for ident in info.get('industryIdentifiers') or []:
-                t = ident.get('type')
-                v = (ident.get('identifier') or '').replace('-', '').strip()
-                if t == 'ISBN_13' and not isbn_13:
-                    isbn_13 = v
-                elif t == 'ISBN_10' and not isbn_10:
-                    isbn_10 = v
-            isbn = isbn_13 or isbn_10
-
-            image_links = info.get('imageLinks') or {}
-            cover_url = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
-            if cover_url:
-                cover_url = cover_url.replace('http://', 'https://').replace('&zoom=1', '&zoom=2')
-
-            author_text = ', '.join(authors).strip() or 'Unknown author'
-            has_author = 0 if author_text == 'Unknown author' else 1
-            has_cover = 1 if cover_url else 0
-
-            results.append({
-                'title': title,
-                'author': author_text,
-                'genre': categories[0] if categories else '',
-                'year': year,
-                'isbn': isbn,
-                'cover_url': cover_url,
-                'description': desc,
-                '_score': has_cover * 4 + has_author * 2,
-            })
-
-        # Prefer suggestions with complete metadata (cover + author) and keep deterministic ordering.
-        ranked = sorted(
-            results,
-            key=lambda r: (r.get('_score', 0), len(r.get('author', ''))),
-            reverse=True,
-        )
-        cleaned = []
-        for row in ranked:
-            row.pop('_score', None)
-            cleaned.append(row)
-
-        return Response({'results': cleaned})
+        google_results = _search_books_google(query)
+        if google_results:
+            cache.set(cache_key, google_results, timeout=60 * 10)
+            return Response({'results': google_results})
     except Exception:
+        logger.exception('Google Books lookup failed for query=%r', query)
+
+    try:
+        fallback_results = _search_books_open_library(query)
+        cache.set(cache_key, fallback_results, timeout=60 * 10)
+        return Response({'results': fallback_results})
+    except Exception:
+        logger.exception('Open Library lookup failed for query=%r', query)
         return Response({'results': []})
+
+
+def _search_books_google(query, max_results=8):
+    resp = requests.get(
+        'https://www.googleapis.com/books/v1/volumes',
+        params={
+            'q': f'intitle:{query}',
+            'maxResults': max_results,
+            'printType': 'books',
+        },
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=6,
+    )
+
+    if resp.status_code == 429:
+        raise requests.HTTPError('Google Books rate-limited request', response=resp)
+    resp.raise_for_status()
+
+    data = resp.json()
+    items = data.get('items', [])
+
+    results = []
+    for item in items:
+        info = item.get('volumeInfo', {})
+        title = (info.get('title') or '').strip()
+        if not title:
+            continue
+
+        authors = info.get('authors') or []
+        categories = info.get('categories') or []
+        published = info.get('publishedDate') or ''
+        year = (published[:4] if published else '')
+        desc = info.get('description') or ''
+
+        isbn_13 = ''
+        isbn_10 = ''
+        for ident in info.get('industryIdentifiers') or []:
+            ident_type = ident.get('type')
+            ident_value = (ident.get('identifier') or '').replace('-', '').strip()
+            if ident_type == 'ISBN_13' and not isbn_13:
+                isbn_13 = ident_value
+            elif ident_type == 'ISBN_10' and not isbn_10:
+                isbn_10 = ident_value
+        isbn = isbn_13 or isbn_10
+
+        image_links = info.get('imageLinks') or {}
+        cover_url = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
+        if cover_url:
+            cover_url = cover_url.replace('http://', 'https://').replace('&zoom=1', '&zoom=2')
+
+        author_text = ', '.join(authors).strip() or 'Unknown author'
+        has_author = 0 if author_text == 'Unknown author' else 1
+        has_cover = 1 if cover_url else 0
+
+        results.append({
+            'title': title,
+            'author': author_text,
+            'genre': categories[0] if categories else '',
+            'year': year,
+            'isbn': isbn,
+            'cover_url': cover_url,
+            'description': desc,
+            '_score': has_cover * 4 + has_author * 2,
+        })
+
+    # Prefer suggestions with complete metadata (cover + author) and keep deterministic ordering.
+    ranked = sorted(
+        results,
+        key=lambda r: (r.get('_score', 0), len(r.get('author', ''))),
+        reverse=True,
+    )
+    cleaned = []
+    for row in ranked:
+        row.pop('_score', None)
+        cleaned.append(row)
+
+    return cleaned
+
+
+def _search_books_open_library(query, max_results=8):
+    resp = requests.get(
+        'https://openlibrary.org/search.json',
+        params={'title': query, 'limit': max_results},
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=6,
+    )
+    resp.raise_for_status()
+
+    data = resp.json()
+    docs = data.get('docs') or []
+
+    results = []
+    for doc in docs:
+        title = (doc.get('title') or '').strip()
+        if not title:
+            continue
+
+        author_names = doc.get('author_name') or []
+        author_text = ', '.join(author_names).strip() or 'Unknown author'
+        subjects = doc.get('subject') or []
+        publish_year = doc.get('first_publish_year')
+        year = str(publish_year) if publish_year else ''
+
+        isbn_values = doc.get('isbn') or []
+        normalized_isbns = [s.replace('-', '').strip() for s in isbn_values if isinstance(s, str)]
+        isbn = normalized_isbns[0] if normalized_isbns else ''
+
+        cover_i = doc.get('cover_i')
+        cover_url = f'https://covers.openlibrary.org/b/id/{cover_i}-L.jpg' if cover_i else ''
+
+        results.append({
+            'title': title,
+            'author': author_text,
+            'genre': subjects[0] if subjects else '',
+            'year': year,
+            'isbn': isbn,
+            'cover_url': cover_url,
+            'description': '',
+        })
+
+    return results
 
 
 def _fetch_cover_google(title, author=''):
