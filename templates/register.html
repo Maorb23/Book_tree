@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Create Account - Readwoods{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/auth.css' %}">
+{% endblock %}
+
+{% block body %}
+<section class="auth-page">
+  <div class="auth-card">
+    <a href="{% url 'tree:landing' %}" class="auth-back">← Back to home</a>
+    <h1>Create your Readwoods account</h1>
+    <p class="auth-sub">As a member you can save your tree, publish picks, and share reading progress with friends.</p>
+
+    {% if already_logged_in %}
+      <div class="auth-message auth-message--ok">You are already registered and signed in. <a href="{% url 'tree:tree' %}">Go to My Tree</a>.</div>
+    {% elif success %}
+      <div class="auth-message auth-message--ok">Account created successfully. <a href="{% url 'tree:tree' %}">Open My Tree</a>.</div>
+    {% endif %}
+
+    {% if form %}
+    <form method="post" class="auth-form">
+      {% csrf_token %}
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      {% if form.non_field_errors %}
+        <div class="auth-message auth-message--error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <label for="id_username">Username</label>
+      {{ form.username }}
+      {% if form.username.errors %}<div class="field-error">{{ form.username.errors }}</div>{% endif %}
+
+      <label for="id_password1">Password</label>
+      {{ form.password1 }}
+      {% if form.password1.errors %}<div class="field-error">{{ form.password1.errors }}</div>{% endif %}
+
+      <label for="id_password2">Confirm Password</label>
+      {{ form.password2 }}
+      {% if form.password2.errors %}<div class="field-error">{{ form.password2.errors }}</div>{% endif %}
+
+      <button type="submit" class="btn btn--primary btn--lg auth-submit">Create Account</button>
+    </form>
+    {% endif %}
+
+    <p class="auth-meta">Already a member? <a href="{% url 'tree:login' %}">Sign in</a></p>
+  </div>
+</section>
+{% endblock %}

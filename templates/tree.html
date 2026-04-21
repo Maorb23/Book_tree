@@ -21,8 +21,9 @@
     <div id="searchResults" class="search-dropdown"></div>
   </div>
   <div class="topbar__actions">
+    <span class="topbar__user">{{ request.user.username }}</span>
+    <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
     <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
-    <button class="btn btn--ghost" id="addNodeBtn">+ Node</button>
   </div>
 </header>
 

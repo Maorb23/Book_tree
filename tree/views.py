@@ -1,11 +1,16 @@
 import requests
 import logging
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.cache import cache
+from django.contrib.auth import login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from rest_framework.decorators import api_view
+from rest_framework.decorators import permission_classes
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework import status
 
@@ -21,11 +26,54 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 
 def landing(request):
-    return render(request, 'landing.html')
+    return render(request, 'landing.html', {
+        'recommended_books': _get_landing_recommendations(),
+    })
 
 
+@login_required
 def tree_page(request):
     return render(request, 'tree.html')
+
+
+def register_view(request):
+    if request.user.is_authenticated:
+        return redirect('tree:tree')
+
+    form = UserCreationForm(request.POST or None)
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        login(request, user)
+        return redirect(next_url or 'tree:tree')
+
+    return render(request, 'register.html', {
+        'form': form,
+        'next_url': next_url,
+    })
+
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('tree:tree')
+
+    next_url = request.POST.get('next') or request.GET.get('next')
+    form = AuthenticationForm(request, data=request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        login(request, form.get_user())
+        return redirect(next_url or 'tree:tree')
+
+    return render(request, 'login.html', {
+        'form': form,
+        'next_url': next_url,
+        'logged_out': request.GET.get('logged_out') == '1',
+    })
+
+
+def logout_view(request):
+    if request.user.is_authenticated:
+        logout(request)
+    return redirect('/login/?logged_out=1')
 
 
 # ──────────────────────────────────────────────
@@ -64,6 +112,7 @@ def tree_data(request):
 # ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticatedOrReadOnly])
 def node_list(request):
     if request.method == 'GET':
         nodes = Node.objects.all()
@@ -86,6 +135,7 @@ def node_list(request):
 
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticatedOrReadOnly])
 def node_detail(request, pk):
     node = get_object_or_404(Node, pk=pk)
 
@@ -106,6 +156,7 @@ def node_detail(request, pk):
 
 
 @api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticatedOrReadOnly])
 def edge_list(request):
     if request.method == 'GET':
         edges = Edge.objects.all()
@@ -137,6 +188,7 @@ def edge_list(request):
 
 
 @api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticatedOrReadOnly])
 def edge_detail(request, pk):
     edge = get_object_or_404(Edge, pk=pk)
 
@@ -352,3 +404,128 @@ def _fetch_cover_open_library(isbn):
     except Exception:
         pass
     return ''
+
+
+def _get_landing_recommendations(limit=6):
+    cache_key = f'landing:recommendations:v1:{limit}'
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
+    tone_classes = [
+        'book-card--gold',
+        'book-card--teal',
+        'book-card--orange',
+        'book-card--rose',
+        'book-card--blue',
+        'book-card--green',
+    ]
+
+    picks = []
+    seen_titles = set()
+
+    db_nodes = (
+        Node.objects
+        .filter(node_type='book')
+        .exclude(title='')
+        .order_by('-rating', '-date_added')[:30]
+    )
+
+    for node in db_nodes:
+        title_key = node.title.strip().lower()
+        if not title_key or title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        picks.append({
+            'title': node.title,
+            'genre': (node.genre or 'Community pick')[:60],
+            'author': (node.author or '').strip(),
+            'cover_url': node.get_cover_url() or '',
+        })
+        if len(picks) >= limit:
+            break
+
+    if len(picks) < limit:
+        query_plan = [
+            'best fantasy books',
+            'best science fiction books',
+            'popular mystery books',
+        ]
+        for query in query_plan:
+            try:
+                results = _search_books_google(query, max_results=8)
+            except Exception:
+                results = []
+
+            for row in results:
+                title = (row.get('title') or '').strip()
+                title_key = title.lower()
+                if not title or title_key in seen_titles:
+                    continue
+                seen_titles.add(title_key)
+                picks.append({
+                    'title': title,
+                    'genre': (row.get('genre') or 'Recommended')[:60],
+                    'author': (row.get('author') or '').strip(),
+                    'cover_url': row.get('cover_url') or '',
+                })
+                if len(picks) >= limit:
+                    break
+            if len(picks) >= limit:
+                break
+
+    if len(picks) < limit:
+        curated = [
+            {
+                'title': 'Project Hail Mary',
+                'genre': 'Science Fiction',
+                'author': 'Andy Weir',
+                'cover_url': _fetch_cover_open_library('9780593135204'),
+            },
+            {
+                'title': 'The Way of Kings',
+                'genre': 'Fantasy',
+                'author': 'Brandon Sanderson',
+                'cover_url': _fetch_cover_open_library('9780765326355'),
+            },
+            {
+                'title': 'The Thursday Murder Club',
+                'genre': 'Mystery',
+                'author': 'Richard Osman',
+                'cover_url': _fetch_cover_open_library('9781984880963'),
+            },
+            {
+                'title': 'East of Eden',
+                'genre': 'Classics',
+                'author': 'John Steinbeck',
+                'cover_url': _fetch_cover_open_library('9780140186390'),
+            },
+            {
+                'title': 'Sapiens',
+                'genre': 'History',
+                'author': 'Yuval Noah Harari',
+                'cover_url': _fetch_cover_open_library('9780062316097'),
+            },
+            {
+                'title': 'Tomorrow, and Tomorrow, and Tomorrow',
+                'genre': 'Literary Fiction',
+                'author': 'Gabrielle Zevin',
+                'cover_url': _fetch_cover_open_library('9780593321201'),
+            },
+        ]
+
+        for row in curated:
+            title_key = row['title'].strip().lower()
+            if title_key in seen_titles:
+                continue
+            seen_titles.add(title_key)
+            picks.append(row)
+            if len(picks) >= limit:
+                break
+
+    for idx, book in enumerate(picks):
+        book['tone'] = tone_classes[idx % len(tone_classes)]
+
+    final_picks = picks[:limit]
+    cache.set(cache_key, final_picks, timeout=60 * 10)
+    return final_picks

@@ -8,7 +8,6 @@
 {% endblock %}
 
 {% block body %}
-<!-- NAV -->
 <nav class="nav">
   <div class="nav__logo">
     <span class="site-logo" aria-hidden="true">
@@ -17,116 +16,146 @@
     <span class="nav__name">Readwoods</span>
   </div>
   <div class="nav__links">
+    <a href="#recommendations">Books</a>
     <a href="#features">Features</a>
-    <a href="#preview">Preview</a>
-    <a href="{% url 'tree:tree' %}" class="nav__cta">Open My Tree</a>
+    <a href="#community">Community</a>
+    {% if request.user.is_authenticated %}
+      <a href="{% url 'tree:tree' %}" class="nav__cta">My Tree</a>
+      <a href="{% url 'tree:logout' %}">Logout</a>
+    {% else %}
+      <a href="{% url 'tree:login' %}">Sign In</a>
+      <a href="{% url 'tree:register' %}" class="nav__cta">Create Account</a>
+    {% endif %}
   </div>
 </nav>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="hero__bg" id="heroBg"></div>
+<header class="hero">
+  <div class="hero__bg"></div>
+  <div class="hero__grain"></div>
   <div class="hero__content">
-    <h1 class="hero__title">
-      Grow Your<br>
-      <span class="hero__title--accent">Reading Journey</span>
-    </h1>
+    <p class="hero__eyebrow">The Social Network For Readers</p>
+    <h1 class="hero__title">Track books, grow your tree, share what is worth reading.</h1>
     <p class="hero__sub">
-      Turn every book you read into a living knowledge tree.<br>
-      Discover connections, track your path, and explore worlds.
+      Readwoods helps people map their reading journey into beautiful book trees and publish it for friends.
+      Follow readers you trust, get recommendations, and build your own living shelf.
     </p>
-    <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">
-      🌱 Start with Readwoods
-    </a>
+    <div class="hero__actions">
+      {% if request.user.is_authenticated %}
+        <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">Open My Tree</a>
+      {% else %}
+        <a href="{% url 'tree:register' %}" class="btn btn--primary btn--lg">Get Started - It's Free</a>
+      {% endif %}
+      <a href="#preview" class="btn btn--ghost btn--lg">See A Tree Demo</a>
+    </div>
+    {% if not request.user.is_authenticated %}
+      <p class="hero__note">Create an account to save your tree, publish recommendations, and react to friends.</p>
+    {% endif %}
   </div>
-  <!-- Floating book particles -->
   <div class="hero__books" id="heroBooks"></div>
+</header>
+
+<section class="recommendations" id="recommendations">
+  <div class="recommendations__inner">
+    <p class="section-kicker">Popular This Week</p>
+    <h2 class="section-title">Colorful picks from the community</h2>
+    <div class="book-strip" aria-label="Recommended books">
+      {% for rec in recommended_books %}
+      <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
+        <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
+        <h3>{{ rec.title }}</h3>
+        {% if rec.author %}<p class="book-card__author">{{ rec.author }}</p>{% endif %}
+      </article>
+      {% empty %}
+      <article class="book-card book-card--blue">
+        <span class="book-card__meta">Recommendations</span>
+        <h3>Add books to your tree to power community picks</h3>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
 </section>
 
-<!-- ANIMATED PREVIEW -->
 <section class="preview" id="preview">
   <div class="preview__inner">
-    <h2 class="section-title">Your Tree, Growing</h2>
-    <p class="section-sub">Watch your reading history bloom into an interconnected tree of knowledge</p>
+    <div class="preview__copy">
+      <p class="section-kicker">Tree Preview</p>
+      <h2 class="section-title">Your books become a living social tree</h2>
+      <p class="section-sub">Every branch shows genres, every node is a book, every connection is your personal reading story.</p>
+    </div>
     <div class="preview__canvas" id="previewCanvas">
       <canvas id="miniTree"></canvas>
       <div class="preview__overlay">
-        <a href="{% url 'tree:tree' %}" class="btn btn--ghost">Explore Full Tree →</a>
+        <a href="{% url 'tree:tree' %}" class="btn btn--ghost">Explore Full Tree</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- FEATURES -->
 <section class="features" id="features">
   <div class="features__inner">
-    <h2 class="section-title">Everything You Need</h2>
+    <p class="section-kicker">Why People Share Here</p>
+    <h2 class="section-title">Built for social reading and recommendations</h2>
     <div class="features__grid">
-      <div class="feature-card">
-        <div class="feature-card__icon">🗺️</div>
-        <h3>Visual Reading Map</h3>
-        <p>See your entire reading history at a glance. Each book a node, each connection a branch.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card__icon">🔗</div>
-        <h3>Discover Connections</h3>
-        <p>Link books by genre, author, series, or your own custom relationships.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card__icon">🎨</div>
-        <h3>Customize Everything</h3>
-        <p>Color your nodes, add badges, glows, and personal notes to each book.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card__icon">🔍</div>
-        <h3>Zoom & Explore</h3>
-        <p>Pan, zoom, and navigate through hundreds of books with smooth performance.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card__icon">📚</div>
-        <h3>Auto Book Covers</h3>
-        <p>Book covers fetched automatically from Google Books and OpenLibrary.</p>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card__icon">🌿</div>
-        <h3>Living Tree</h3>
-        <p>As you read more, your tree grows. Watch it evolve into a forest of knowledge.</p>
-      </div>
+      <article class="feature-card feature-card--cyan">
+        <h3>Visual Reading Identity</h3>
+        <p>Show your reading taste as a tree, not just a list. Friends can see your growth and favorite genres instantly.</p>
+      </article>
+      <article class="feature-card feature-card--lime">
+        <h3>Recommendation Highlights</h3>
+        <p>Pin standout books in colorful cards so people know exactly what to read next from your tree.</p>
+      </article>
+      <article class="feature-card feature-card--amber">
+        <h3>Follow Friends' Trees</h3>
+        <p>Track what your circle reads, discover new branches, and build a smarter reading feed together.</p>
+      </article>
+      <article class="feature-card feature-card--violet">
+        <h3>One Click Sharing</h3>
+        <p>Share your tree snapshot as a profile-worthy visual and invite others into your reading network.</p>
+      </article>
+      <article class="feature-card feature-card--red">
+        <h3>Review + React Culture</h3>
+        <p>Leave short takes, react to books, and turn recommendations into ongoing conversations.</p>
+      </article>
+      <article class="feature-card feature-card--blue">
+        <h3>Always Expanding</h3>
+        <p>As you read more, your tree gets richer, your profile gets stronger, and your recommendations get better.</p>
+      </article>
     </div>
   </div>
 </section>
 
-<!-- STATS -->
-<section class="stats">
-  <div class="stats__inner">
-    <div class="stat">
-      <span class="stat__num">100+</span>
-      <span class="stat__label">Books Supported</span>
+<section class="community" id="community">
+  <div class="community__inner">
+    <div class="community__head">
+      <p class="section-kicker">Community Feed</p>
+      <h2 class="section-title">People are sharing trees right now</h2>
     </div>
-    <div class="stat">
-      <span class="stat__num">5</span>
-      <span class="stat__label">Node Types</span>
-    </div>
-    <div class="stat">
-      <span class="stat__num">∞</span>
-      <span class="stat__label">Connections</span>
+    <div class="community__grid">
+      <article class="share-card">
+        <div class="share-card__user"><span class="avatar avatar--a">A</span> <strong>Arielle</strong> shared a new Fantasy branch</div>
+        <p>"Added 4 epic fantasy books and ranked my top 2 this month."</p>
+      </article>
+      <article class="share-card">
+        <div class="share-card__user"><span class="avatar avatar--b">M</span> <strong>Max</strong> posted a Sci-Fi mini tree</div>
+        <p>"My AI and space recommendations if you like fast reads."</p>
+      </article>
+      <article class="share-card">
+        <div class="share-card__user"><span class="avatar avatar--c">N</span> <strong>Noa</strong> reviewed this week's pick</div>
+        <p>"Short review + branch notes on a modern classic."</p>
+      </article>
     </div>
   </div>
 </section>
 
-<!-- FINAL CTA -->
 <section class="cta-section">
-  <h2>Ready to Grow Your Tree?</h2>
-  <p>Your reading journey starts with a single leaf.</p>
-  <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">
-    🌳 Start Now — It's Free
-  </a>
+  <h2>Start your tree and let friends discover your books</h2>
+  <p>Move from private reading logs to a shareable reading identity.</p>
+  <a href="{% url 'tree:tree' %}" class="btn btn--primary btn--lg">Build My Book Tree</a>
 </section>
 
-<!-- FOOTER -->
 <footer class="footer">
   <span>Readwoods</span>
-  <span>Built with Django & D3.js</span>
+  <span>Social trees for serious readers</span>
 </footer>
 
 <script src="{% static 'js/landing.js' %}"></script>

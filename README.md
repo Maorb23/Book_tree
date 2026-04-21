@@ -69,14 +69,16 @@ python manage.py runserver
 Open:
 
 - Landing page: http://127.0.0.1:8000/
-- Tree view: http://127.0.0.1:8000/tree/
+- Register: http://127.0.0.1:8000/register/
+- Login: http://127.0.0.1:8000/login/
+- Tree view (requires login): http://127.0.0.1:8000/tree/
 - Admin: http://127.0.0.1:8000/admin/
 
 ## API endpoints
 
 - GET http://127.0.0.1:8000/api/tree/
-- GET, POST http://127.0.0.1:8000/api/nodes/
-- GET, PUT, PATCH, DELETE http://127.0.0.1:8000/api/nodes/<id>/
+- GET, POST (POST requires login) http://127.0.0.1:8000/api/nodes/
+- GET, PUT, PATCH, DELETE (write requires login) http://127.0.0.1:8000/api/nodes/<id>/
 - GET http://127.0.0.1:8000/api/cover/?title=<title>&author=<author>&isbn=<isbn>
 
 ## Development notes

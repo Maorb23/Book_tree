@@ -94,3 +94,7 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
     ],
 }
+
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/tree/'
+LOGOUT_REDIRECT_URL = '/login/'

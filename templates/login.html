@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Sign In - Readwoods{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/auth.css' %}">
+{% endblock %}
+
+{% block body %}
+<section class="auth-page">
+  <div class="auth-card">
+    <a href="{% url 'tree:landing' %}" class="auth-back">← Back to home</a>
+    <h1>Sign in to Readwoods</h1>
+    <p class="auth-sub">Access your personal tree and share recommendations with your community.</p>
+
+    {% if already_logged_in %}
+      <div class="auth-message auth-message--ok">You are already signed in. <a href="{% url 'tree:tree' %}">Go to My Tree</a>.</div>
+    {% elif success %}
+      <div class="auth-message auth-message--ok">Signed in successfully. <a href="{% url 'tree:tree' %}">Open My Tree</a>.</div>
+    {% elif logged_out %}
+      <div class="auth-message auth-message--ok">You have been logged out. Sign in again when you are ready.</div>
+    {% endif %}
+
+    {% if form %}
+    <form method="post" class="auth-form">
+      {% csrf_token %}
+      {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+      {% if form.non_field_errors %}
+        <div class="auth-message auth-message--error">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <label for="id_username">Username</label>
+      {{ form.username }}
+      {% if form.username.errors %}<div class="field-error">{{ form.username.errors }}</div>{% endif %}
+
+      <label for="id_password">Password</label>
+      {{ form.password }}
+      {% if form.password.errors %}<div class="field-error">{{ form.password.errors }}</div>{% endif %}
+
+      <button type="submit" class="btn btn--primary btn--lg auth-submit">Sign In</button>
+    </form>
+    {% endif %}
+
+    <p class="auth-meta">New here? <a href="{% url 'tree:register' %}">Create an account</a></p>
+  </div>
+</section>
+{% endblock %}
