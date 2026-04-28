@@ -406,6 +406,13 @@ def _fetch_cover_open_library(isbn):
     return ''
 
 
+def _open_library_cover_url(isbn):
+    normalized = (isbn or '').replace('-', '').strip()
+    if not normalized:
+        return ''
+    return f"https://covers.openlibrary.org/b/isbn/{normalized}-L.jpg"
+
+
 def _get_landing_recommendations(limit=6):
     cache_key = f'landing:recommendations:v1:{limit}'
     cached = cache.get(cache_key)
@@ -436,11 +443,16 @@ def _get_landing_recommendations(limit=6):
         if not title_key or title_key in seen_titles:
             continue
         seen_titles.add(title_key)
+        db_cover = node.get_cover_url() or ''
+        if not db_cover and node.isbn:
+            db_cover = _open_library_cover_url(node.isbn)
+        if not db_cover and node.title:
+            db_cover = _fetch_cover_google(node.title, node.author or '')
         picks.append({
             'title': node.title,
             'genre': (node.genre or 'Community pick')[:60],
             'author': (node.author or '').strip(),
-            'cover_url': node.get_cover_url() or '',
+            'cover_url': db_cover,
         })
         if len(picks) >= limit:
             break
@@ -467,7 +479,7 @@ def _get_landing_recommendations(limit=6):
                     'title': title,
                     'genre': (row.get('genre') or 'Recommended')[:60],
                     'author': (row.get('author') or '').strip(),
-                    'cover_url': row.get('cover_url') or '',
+                    'cover_url': row.get('cover_url') or _open_library_cover_url(row.get('isbn') or ''),
                 })
                 if len(picks) >= limit:
                     break
@@ -480,37 +492,37 @@ def _get_landing_recommendations(limit=6):
                 'title': 'Project Hail Mary',
                 'genre': 'Science Fiction',
                 'author': 'Andy Weir',
-                'cover_url': _fetch_cover_open_library('9780593135204'),
+                'cover_url': _open_library_cover_url('9780593135204'),
             },
             {
                 'title': 'The Way of Kings',
                 'genre': 'Fantasy',
                 'author': 'Brandon Sanderson',
-                'cover_url': _fetch_cover_open_library('9780765326355'),
+                'cover_url': _open_library_cover_url('9780765326355'),
             },
             {
                 'title': 'The Thursday Murder Club',
                 'genre': 'Mystery',
                 'author': 'Richard Osman',
-                'cover_url': _fetch_cover_open_library('9781984880963'),
+                'cover_url': _open_library_cover_url('9781984880963'),
             },
             {
                 'title': 'East of Eden',
                 'genre': 'Classics',
                 'author': 'John Steinbeck',
-                'cover_url': _fetch_cover_open_library('9780140186390'),
+                'cover_url': _open_library_cover_url('9780140186390'),
             },
             {
                 'title': 'Sapiens',
                 'genre': 'History',
                 'author': 'Yuval Noah Harari',
-                'cover_url': _fetch_cover_open_library('9780062316097'),
+                'cover_url': _open_library_cover_url('9780062316097'),
             },
             {
                 'title': 'Tomorrow, and Tomorrow, and Tomorrow',
                 'genre': 'Literary Fiction',
                 'author': 'Gabrielle Zevin',
-                'cover_url': _fetch_cover_open_library('9780593321201'),
+                'cover_url': _open_library_cover_url('9780593321201'),
             },
         ]
 
