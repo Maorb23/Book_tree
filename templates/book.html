@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods — Book{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/book.css' %}">
+{% endblock %}
+
+{% block body %}
+<nav class="nav nav--solid">
+  <div class="nav__logo">
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
+  </div>
+  <div class="nav__links">
+    <a href="{% url 'tree:landing' %}">Home</a>
+    {% if request.user.is_authenticated %}
+      <a href="{% url 'tree:tree' %}" class="nav__cta">My Tree</a>
+      <a href="{% url 'tree:logout' %}">Logout</a>
+    {% else %}
+      <a href="{% url 'tree:login' %}">Sign In</a>
+      <a href="{% url 'tree:register' %}" class="nav__cta">Create Account</a>
+    {% endif %}
+  </div>
+</nav>
+
+<main class="book-page" data-title="{{ title|escape }}" data-author="{{ author|escape }}" data-isbn="{{ isbn|escape }}">
+  <section class="book-hero">
+    <div class="book-hero__bg"></div>
+    <div class="book-hero__content">
+      <div class="book-hero__cover" id="bookCover">
+        <span>Loading cover</span>
+      </div>
+      <div class="book-hero__meta">
+        <p class="book-hero__eyebrow">Readwoods Book Page</p>
+        <h1 id="bookTitle">Searching...</h1>
+        <p class="book-hero__author" id="bookAuthor"></p>
+        <div class="book-hero__info" id="bookInfo"></div>
+        <div class="book-hero__actions">
+          <a id="bookSearchLink" class="btn btn--ghost" href="#">Search on Google Books</a>
+          <a href="{% url 'tree:tree' %}" class="btn btn--primary">Go to My Tree</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="book-details">
+    <div class="book-details__card">
+      <h2>About this book</h2>
+      <p id="bookDescription">Fetching details...</p>
+    </div>
+    <div class="book-details__card" id="bookMetaCard">
+      <h3>Details</h3>
+      <ul id="bookMetaList"></ul>
+    </div>
+  </section>
+</main>
+
+<script src="{% static 'js/book.js' %}"></script>
+{% endblock %}

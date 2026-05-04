@@ -60,11 +60,13 @@
     <h2 class="section-title">Colorful picks from the community</h2>
     <div class="book-strip" aria-label="Recommended books">
       {% for rec in recommended_books %}
-      <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
-        <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
-        <h3>{{ rec.title }}</h3>
-        {% if rec.author %}<p class="book-card__author">{{ rec.author }}</p>{% endif %}
-      </article>
+      <a class="book-link" href="{% url 'tree:book' %}?title={{ rec.title|urlencode }}{% if rec.author %}&author={{ rec.author|urlencode }}{% endif %}{% if rec.isbn %}&isbn={{ rec.isbn|urlencode }}{% endif %}" aria-label="Open {{ rec.title }} details">
+        <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
+          <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
+          <h3>{{ rec.title }}</h3>
+          {% if rec.author %}<p class="book-card__author">{{ rec.author }}</p>{% endif %}
+        </article>
+      </a>
       {% empty %}
       <article class="book-card book-card--blue">
         <span class="book-card__meta">Recommendations</span>
