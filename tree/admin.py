@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Node, Edge
+from .models import Node, Edge, UserProfile, FriendRequest, Friendship, CommunityPost
 
 
 @admin.register(Node)
@@ -14,3 +14,29 @@ class NodeAdmin(admin.ModelAdmin):
 class EdgeAdmin(admin.ModelAdmin):
     list_display = ('source', 'target', 'edge_type')
     list_filter = ('edge_type',)
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'display_name', 'created_at')
+    search_fields = ('user__username', 'display_name')
+
+
+@admin.register(FriendRequest)
+class FriendRequestAdmin(admin.ModelAdmin):
+    list_display = ('from_user', 'to_user', 'status', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('from_user__username', 'to_user__username')
+
+
+@admin.register(Friendship)
+class FriendshipAdmin(admin.ModelAdmin):
+    list_display = ('user_a', 'user_b', 'created_at')
+    search_fields = ('user_a__username', 'user_b__username')
+
+
+@admin.register(CommunityPost)
+class CommunityPostAdmin(admin.ModelAdmin):
+    list_display = ('title', 'user', 'visibility', 'created_at')
+    list_filter = ('visibility', 'progress_status')
+    search_fields = ('title', 'user__username')

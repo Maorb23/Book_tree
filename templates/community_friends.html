@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods — Friends{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/community.css' %}">
+{% endblock %}
+
+{% block body %}
+<div class="community-page">
+  <nav class="community-nav">
+    <a href="{% url 'tree:landing' %}" class="community-nav__brand">
+      <span class="site-logo" aria-hidden="true">
+        <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+      </span>
+      <span>Readwoods</span>
+    </a>
+    <div class="community-nav__links">
+      <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost" aria-label="Community" title="Community">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:tree' %}" class="btn btn--ghost" aria-label="My Tree" title="My Tree">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 4l9 6.5"/><path d="M5 10v9h14v-9"/><path d="M9 19v-6h6v6"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:community-create-post' %}" class="btn btn--primary" aria-label="New Post" title="New Post">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:community-people' %}" class="btn btn--ghost" aria-label="Find People" title="Find People">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 19c0-3 3-5 6-5"/><path d="M14 19c0-2 2-3 4-3"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:community-requests' %}" class="btn btn--ghost" aria-label="Requests" title="Requests">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h8"/><path d="M18 12v6"/><path d="M15 15h6"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:community-friends' %}" class="btn btn--ghost btn--active" aria-label="Friends" title="Friends">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 19c0-3 3-5 6-5"/><path d="M14 19c0-2 2-3 4-3"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:community-my-posts' %}" class="btn btn--ghost" aria-label="My Posts" title="My Posts">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 5h9l3 3v11H6z"/><path d="M9 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
+        </span>
+      </a>
+      <a href="{% url 'tree:logout' %}" class="btn btn--ghost" aria-label="Logout" title="Logout">
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4h8v16H9"/><path d="M5 12h10"/><path d="M9 8l-4 4 4 4"/></svg>
+        </span>
+      </a>
+    </div>
+  </nav>
+
+  <main class="community-shell">
+    <header class="community-header">
+      <h1>Your Connections</h1>
+      <p>Readers you have connected with will appear here.</p>
+    </header>
+
+    {% if friends %}
+      <section class="people-grid">
+        {% for entry in friends %}
+        <article class="community-card person-card">
+          <div>
+            <div class="person-name">{{ entry.display_name }}</div>
+            <div class="person-meta">@{{ entry.user.username }}</div>
+          </div>
+          <span class="pill">Connected</span>
+        </article>
+        {% endfor %}
+      </section>
+    {% else %}
+      <div class="community-card empty-state">
+        <h3>No connections yet</h3>
+        <p>Find people to start sharing your reading tree with.</p>
+        <a href="{% url 'tree:community-people' %}" class="btn btn--primary">Find People</a>
+      </div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

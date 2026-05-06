@@ -1,259 +1,2641 @@
-{% extends "base.html" %}
 {% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Readwoods — My Book Tree</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-deep: #0a0d0a;
+      --bg-dark: #10150f;
+      --bg-panel: rgba(17, 24, 18, 0.92);
+      --bg-panel-soft: rgba(22, 31, 23, 0.92);
+      --border: rgba(121, 97, 60, 0.35);
+      --border-soft: rgba(190, 160, 120, 0.2);
+      --text-light: #f6f0e8;
+      --text-muted: #c8b8a4;
+      --accent: #f2c572;
+      --accent-soft: rgba(242, 197, 114, 0.22);
+      --danger: #b14a3b;
+      --radius: 14px;
+      --shadow: 0 20px 40px rgba(8, 6, 4, 0.48);
+      --font-serif: "Garamond", "Goudy Old Style", "Times New Roman", serif;
+      --font-sans: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+      --transition: 0.2s ease;
+    }
 
-{% block title %}Readwoods — My Book Tree{% endblock %}
+    html, body { height: 100%; overflow: hidden; background: var(--bg-deep); }
+    body { font-family: var(--font-sans); color: var(--text-light); }
 
-{% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/tree.css' %}?v=20260406e">
-{% endblock %}
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-deep); }
+    ::-webkit-scrollbar-thumb { background: rgba(230, 206, 160, 0.7); border-radius: 6px; }
 
-{% block body %}
-<!-- TOP NAVIGATION -->
-<header class="topbar">
-  <a href="{% url 'tree:landing' %}" class="topbar__logo">
-    <span class="site-logo" aria-hidden="true">
-      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="34" height="34" loading="eager" decoding="async">
-    </span>
-    <span class="topbar__logo-text">Readwoods</span>
-  </a>
-  <div class="topbar__search">
-    <input type="text" id="searchInput" placeholder="Search your tree…" autocomplete="off">
-    <div id="searchResults" class="search-dropdown"></div>
-  </div>
-  <div class="topbar__actions">
-    <span class="topbar__user">{{ request.user.username }}</span>
-    <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
-    <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
-  </div>
-</header>
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 18px; border-radius: 999px; border: 1px solid transparent;
+      cursor: pointer; font-family: var(--font-sans); font-size: 0.9rem; font-weight: 600;
+      text-decoration: none; transition: all var(--transition); white-space: nowrap;
+    }
+    .btn--primary {
+      background: linear-gradient(130deg, #f5d7a6, #d8a04b);
+      color: #1c1206;
+      box-shadow: 0 8px 22px rgba(207, 155, 74, 0.28);
+    }
+    .btn--primary:hover { transform: translateY(-1px); filter: brightness(1.03); }
+    .btn--ghost {
+      background: rgba(23, 30, 22, 0.75); color: var(--text-light);
+      border: 1px solid var(--border);
+    }
+    .btn--ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn--danger { background: #3a1a13; color: #f6e8de; border: 1px solid rgba(186, 90, 74, 0.6); }
+    .btn--danger:hover { background: #4a2018; }
+    .btn--lg { padding: 12px 28px; font-size: 1rem; }
+    .btn--sm { padding: 6px 12px; font-size: 0.8rem; }
 
-<!-- MAIN CANVAS -->
-<main class="canvas-wrap">
-  <svg id="treeCanvas">
-    <defs>
-      <filter id="glow-blue">
-        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <filter id="glow-purple">
-        <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
-        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <filter id="glow-green">
-        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-      <filter id="shadow">
-        <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgba(0,0,0,0.5)"/>
-      </filter>
-      <radialGradient id="bgGrad" cx="50%" cy="50%" r="70%">
-        <stop offset="0%" stop-color="#1a241b"/>
-        <stop offset="55%" stop-color="#111b13"/>
-        <stop offset="100%" stop-color="#0a110c"/>
-      </radialGradient>
-    </defs>
-    <!-- Background -->
-    <rect id="bgRect" fill="url(#bgGrad)"/>
-    <!-- Forest atmosphere layer -->
-    <g id="forestBackdrop"></g>
-    <!-- Tree links layer -->
-    <g id="linksLayer"></g>
-    <!-- Tree nodes layer -->
-    <g id="nodesLayer"></g>
-  </svg>
+    .site-logo {
+      width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+      flex: 0 0 36px; border-radius: 8px; overflow: hidden;
+    }
+    .site-logo img { width: 100%; height: 100%; display: block; object-fit: contain; }
 
-  <!-- MINIMAP -->
-  <div class="minimap" id="minimap">
-    <div class="minimap__header">Overview</div>
-    <svg id="minimapSvg"></svg>
-    <div id="minimapViewport" class="minimap__viewport"></div>
-  </div>
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      height: 68px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
+      padding: 0 22px;
+      background: linear-gradient(180deg, rgba(9, 10, 9, 0.98), rgba(13, 16, 12, 0.86));
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+    .nav__logo {
+      display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text-light);
+      font-family: var(--font-serif); font-size: 1.05rem; letter-spacing: 0.02em;
+    }
+    .nav__name { font-weight: 600; }
+    .nav__search { position: relative; max-width: 420px; }
+    .nav__search input {
+      width: 100%; padding: 9px 14px; border-radius: 12px;
+      background: rgba(9, 12, 10, 0.82); color: var(--text-light);
+      border: 1px solid var(--border); outline: none; font-size: 0.9rem;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .nav__search input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .search-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+      background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: var(--shadow); max-height: 240px; overflow-y: auto; z-index: 300; display: none;
+    }
+    .search-dropdown.active { display: block; }
+    .search-item {
+      padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+      font-size: 0.88rem; transition: background var(--transition);
+    }
+    .search-item:hover { background: rgba(242, 197, 114, 0.14); }
+    .search-item__cover { width: 28px; height: 42px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+    .nav__links { display: flex; align-items: center; gap: 12px; }
+    .nav__user {
+      display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+      border: 1px solid var(--border); background: rgba(20, 28, 20, 0.76);
+      font-size: 0.8rem; color: var(--text-light);
+    }
 
-  <!-- ZOOM CONTROLS -->
-  <div class="zoom-controls">
-    <button id="zoomIn" title="Zoom in">+</button>
-    <button id="zoomReset" title="Reset view">⊙</button>
-    <button id="zoomOut" title="Zoom out">−</button>
-  </div>
+    .canvas-wrap {
+      position: fixed; inset: 0; top: 68px; overflow: hidden; background: var(--bg-deep);
+    }
+    .canvas-wrap::before {
+      content: ""; position: absolute; inset: -10% 0 0; z-index: 1;
+      background: radial-gradient(circle at 50% 30%, rgba(255, 233, 197, 0.06), transparent 55%),
+                  radial-gradient(circle at 70% 80%, rgba(162, 210, 255, 0.08), transparent 60%);
+      opacity: 0.9; pointer-events: none;
+      animation: canopyGlow 14s ease-in-out infinite alternate;
+    }
+    .canvas-wrap::after {
+      content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+      background: linear-gradient(0deg, rgba(16, 14, 12, 0.75), transparent 45%),
+                  repeating-linear-gradient(120deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02) 2px, transparent 2px, transparent 6px);
+      mix-blend-mode: screen;
+      animation: mistDrift 20s linear infinite;
+    }
 
-  <!-- BOTTOM FLOATING BAR (appears when scrolled) -->
-  <div class="float-bar" id="floatBar">
-    <button class="float-btn" id="scrollTopBtn" title="Go to top">↑ Top</button>
-    <button class="float-btn" id="expandAllBtn">⊞ Expand All</button>
-    <button class="float-btn" id="collapseAllBtn">⊟ Collapse All</button>
-    <button class="float-btn float-btn--primary" id="floatAddBook">+ Node</button>
-  </div>
+    #treeCanvas { width: 100%; height: 100%; cursor: grab; display: block; position: relative; z-index: 2; }
+    #treeCanvas:active { cursor: grabbing; }
+    #bgRect { width: 100%; height: 100%; }
 
-  <!-- LOADING -->
-  <div class="loading-overlay" id="loadingOverlay">
-    <div class="loading-spinner"></div>
-    <p>Growing your tree…</p>
-  </div>
+    .node-group { cursor: pointer; }
+    .node-group:hover .node-card { filter: brightness(1.12); }
+    .node-card { rx: 16; ry: 16; filter: url(#barkShadow); transition: all 0.2s; }
+    .node-title {
+      font-family: var(--font-serif); font-size: 24px; font-weight: 700;
+      fill: #f5e8d4; text-anchor: middle; letter-spacing: 0.01em;
+    }
+    .node-meta { font-family: var(--font-sans); font-size: 9.8px; fill: rgba(241, 229, 210, 0.78); text-anchor: middle; }
+    .node-badge { font-size: 12px; }
+    .node-actions {
+      opacity: 0; transform: translateX(-4px);
+      transition: opacity 0.14s ease, transform 0.16s ease;
+      transition-delay: 0s; pointer-events: none;
+    }
+    .node-group:hover .node-actions,
+    .node-group.is-hovered .node-actions,
+    .node-actions:hover {
+      opacity: 1; transform: translateX(0); pointer-events: all;
+    }
+    .node-hover-bridge { pointer-events: all; }
+    .action-rail { pointer-events: none; backdrop-filter: blur(4px); }
+    .action-btn { cursor: pointer; transition: opacity 0.12s, filter 0.12s; transform-box: fill-box; transform-origin: center center; }
+    .action-btn:hover { opacity: 1; filter: brightness(1.1); }
+    .action-btn text { pointer-events: none; }
 
-  <!-- EMPTY STATE -->
-  <div class="empty-state" id="emptyState" style="display:none">
-    <div class="empty-state__icon">🌱</div>
-    <h2>Your tree is empty</h2>
-    <p>Add your first book to start growing your Readwoods tree.</p>
-    <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Node</button>
-  </div>
-</main>
+    .tree-link { fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0.78; }
+    .tree-link--wood { stroke: url(#branchWood); }
+    .tree-link--highlight { stroke: url(#branchSap); }
+    .tree-link--custom { opacity: 0.86; }
 
-<!-- ─── MODALS ─────────────────────────────── -->
+    .genre-label {
+      font-family: var(--font-serif); font-size: 22px;
+      fill: rgba(245, 217, 162, 0.24); pointer-events: none;
+    }
 
-<!-- ADD / EDIT BOOK MODAL -->
-<div class="modal-overlay" id="bookModal">
-  <div class="modal book-modal">
-    <div class="modal__header">
-      <h3 id="modalTitle">ADD NEW NODE</h3>
-      <button class="modal__close" id="closeBookModal">✕</button>
+    .minimap {
+      position: absolute; bottom: 16px; right: 16px; width: 180px;
+      background: rgba(14, 16, 13, 0.88); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); backdrop-filter: blur(10px);
+      z-index: 6;
+    }
+    .minimap__header {
+      padding: 6px 10px; font-size: 0.7rem; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    #minimapSvg { width: 100%; height: 130px; display: block; }
+    .minimap__viewport {
+      position: absolute; border: 1.5px solid var(--accent);
+      background: rgba(242, 197, 114, 0.15); pointer-events: none; border-radius: 2px;
+    }
+
+    .zoom-controls {
+      position: absolute; bottom: 16px; right: 212px; display: flex; flex-direction: column; gap: 6px; z-index: 6;
+    }
+    .zoom-controls button {
+      width: 36px; height: 36px; background: rgba(13, 16, 12, 0.92);
+      border: 1px solid var(--border); color: var(--text-light); border-radius: 10px;
+      font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all var(--transition); backdrop-filter: blur(8px);
+    }
+    .zoom-controls button:hover { border-color: var(--accent); color: var(--accent); }
+
+    .float-bar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; align-items: center; background: rgba(12, 14, 11, 0.92);
+      border: 1px solid var(--border); border-radius: 40px; padding: 8px 16px; backdrop-filter: blur(10px);
+      box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity 0.3s; white-space: nowrap; z-index: 6;
+    }
+    .float-bar.visible { opacity: 1; pointer-events: all; }
+    .float-btn {
+      padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-light); font-size: 0.82rem; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .float-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .float-btn--primary { background: linear-gradient(135deg, #f0d2a2, #d39a4d) !important; color: #1a1007 !important; border-color: transparent !important; }
+
+    .loading-overlay {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: rgba(10, 11, 9, 0.92); z-index: 8;
+    }
+    .loading-spinner {
+      width: 48px; height: 48px; border: 3px solid rgba(215, 183, 128, 0.4); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px;
+    }
+    .loading-overlay p { color: var(--text-muted); font-size: 0.92rem; }
+
+    .empty-state {
+      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 14px; text-align: center; z-index: 5;
+    }
+    .empty-state__icon { font-size: 4rem; }
+    .empty-state h2 { font-family: var(--font-serif); font-size: 1.9rem; }
+    .empty-state p { color: var(--text-muted); }
+
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 500; background: rgba(9, 11, 9, 0.6);
+      backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .book-modal {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 18px; width: min(760px, 96vw); max-height: min(92vh, 860px);
+      overflow-y: auto; box-shadow: var(--shadow), 0 0 40px rgba(216, 160, 75, 0.2);
+      transform: scale(0.95) translateY(10px); transition: transform 0.25s;
+    }
+    .modal-overlay.open .book-modal { transform: scale(1) translateY(0); }
+    .modal__header {
+      display: flex; align-items: center; justify-content: space-between; padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal__header h3 { font-family: var(--font-serif); font-size: 1.2rem; }
+    .modal__close {
+      background: none; border: none; color: var(--text-muted); font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
+      border-radius: 6px; transition: all var(--transition);
+    }
+    .modal__close:hover { background: rgba(242, 197, 114, 0.18); color: var(--text-light); }
+    .modal__body { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+    .modal__footer {
+      display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .form-row { display: flex; gap: 14px; }
+    .form-row .form-group { flex: 1; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      background: var(--bg-panel-soft); border: 1px solid var(--border);
+      color: var(--text-light); padding: 9px 12px; border-radius: 10px;
+      font-family: var(--font-sans); font-size: 0.9rem; outline: none; transition: border-color var(--transition);
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus { border-color: var(--accent); }
+    .form-group input[type="color"] { padding: 3px 6px; height: 38px; width: 56px; cursor: pointer; }
+    .form-group select option { background: #1b201a; }
+
+    .cover-picker { display: flex; gap: 14px; align-items: flex-start; }
+    .cover-picker__preview {
+      width: 84px; height: 126px; background: #10140e; border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); font-size: 0.75rem; text-align: center;
+    }
+    .cover-picker__preview img { width: 100%; height: 100%; object-fit: cover; }
+    .cover-picker__controls { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+    .type-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+    .type-btn {
+      padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); font-size: 0.82rem; cursor: pointer;
+      transition: all var(--transition);
+    }
+    .type-btn.active { background: rgba(242, 197, 114, 0.2); border-color: var(--accent); color: var(--accent); }
+    .type-btn:hover { border-color: var(--accent); color: var(--text-light); }
+
+    .style-panel {
+      background: rgba(12, 15, 11, 0.9); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 16px;
+    }
+    .style-panel summary { cursor: pointer; font-size: 0.88rem; color: var(--text-muted); user-select: none; }
+    .style-panel summary:hover { color: var(--text-light); }
+    .style-grid { display: flex; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+    .style-grid .form-group { flex: 1; min-width: 100px; }
+
+    .badge-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge-opt {
+      padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+      cursor: pointer; font-size: 0.82rem; color: var(--text-muted); transition: all var(--transition);
+    }
+    .badge-opt.selected { background: rgba(242, 197, 114, 0.18); border-color: var(--accent); color: var(--accent); }
+    .badge-opt:hover { border-color: var(--text-muted); color: var(--text-light); }
+
+    .sidebar {
+      position: fixed; right: 0; top: 68px; bottom: 0; width: 320px; z-index: 150;
+      background: var(--bg-panel); border-left: 1px solid var(--border);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+      transform: translateX(100%); transition: transform 0.3s ease; overflow-y: auto; padding: 24px 20px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar__close {
+      position: sticky; top: 12px; margin-left: auto; display: block; z-index: 4;
+      background: rgba(12, 16, 12, 0.88); border: 1px solid var(--border);
+      color: var(--text-muted); font-size: 1.1rem; cursor: pointer; padding: 6px; border-radius: 6px;
+    }
+    .sidebar__close:hover { color: var(--text-light); background: rgba(242, 197, 114, 0.14); }
+    #sidebarContent { padding-top: 6px; }
+    .sidebar-cover { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px; margin-bottom: 16px; background: #10140e; }
+    .sidebar-title { font-family: var(--font-serif); font-size: 1.3rem; margin-bottom: 6px; }
+    .sidebar-meta { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 12px; }
+    .sidebar-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .sidebar-badge { padding: 4px 10px; background: rgba(242, 197, 114, 0.12); border: 1px solid var(--border); border-radius: 20px; font-size: 0.8rem; }
+    .sidebar-notes { color: var(--text-muted); font-size: 0.88rem; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; }
+    .sidebar-actions { display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-select {
+      width: 100%; background: var(--bg-panel-soft); border: 1px solid var(--border);
+      color: var(--text-light); border-radius: 8px; padding: 8px 10px; font-size: 0.88rem; font-family: var(--font-sans);
+    }
+    .sidebar-section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 16px 0 8px; }
+    .sidebar-children { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .sidebar-child {
+      padding: 8px 12px; background: rgba(12, 16, 12, 0.9); border: 1px solid var(--border);
+      border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: all var(--transition); color: var(--text-light);
+    }
+    .sidebar-child:hover { border-color: var(--accent); color: var(--accent); }
+    .sidebar-child--connection { cursor: default; color: var(--text-light); display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-child--connection:hover { border-color: var(--border); color: var(--text-light); }
+    .connection-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .connection-style-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .connection-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    #toastHost {
+      position: fixed; right: 16px; top: 16px; z-index: 1400;
+      display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+    }
+    .app-toast {
+      min-width: 260px; max-width: 360px; pointer-events: all;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+      background: rgba(14, 18, 13, 0.95); color: var(--text-light);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28); opacity: 1; transform: translateY(0);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+    .app-toast--success { border-color: rgba(168, 214, 140, 0.52); }
+    .app-toast--error { border-color: rgba(239, 116, 80, 0.48); }
+    .app-toast--hide { opacity: 0; transform: translateY(-6px); }
+    .app-toast__msg { font-size: 0.88rem; line-height: 1.35; }
+    .app-toast__close { border: none; background: transparent; color: var(--text-muted); font-size: 1rem; cursor: pointer; }
+
+    .app-confirm {
+      position: fixed; inset: 0; z-index: 1500; background: rgba(10, 12, 10, 0.7);
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .app-confirm__dialog { width: min(96vw, 430px); }
+    .app-confirm__card {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text-light); box-shadow: var(--shadow);
+    }
+    .app-confirm__header,
+    .app-confirm__footer { padding: 12px 14px; border-color: var(--border); }
+    .app-confirm__header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+    .app-confirm__title { margin: 0; font-size: 1rem; font-family: var(--font-serif); }
+    .app-confirm__x { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 1.1rem; }
+    .app-confirm__body { padding: 14px; color: var(--text-muted); }
+    .app-confirm__footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); }
+    body.confirm-open { overflow: hidden; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes canopyGlow {
+      0% { opacity: 0.6; }
+      100% { opacity: 1; }
+    }
+    @keyframes mistDrift {
+      0% { transform: translateX(-2%); }
+      100% { transform: translateX(2%); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .canvas-wrap::before,
+      .canvas-wrap::after { animation: none; }
+    }
+
+    @media (max-width: 900px) { .book-modal { width: 96vw; max-height: 92vh; } }
+    @media (max-width: 680px) {
+      .modal__header, .modal__body, .modal__footer { padding-left: 14px; padding-right: 14px; }
+      .form-row { flex-direction: column; gap: 10px; }
+      .cover-picker { flex-direction: column; }
+      .cover-picker__preview { width: 72px; height: 108px; }
+      .nav { grid-template-columns: 1fr; height: auto; gap: 10px; padding: 12px 16px; }
+      .nav__links { justify-content: space-between; flex-wrap: wrap; }
+      .nav__search { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="{% url 'tree:landing' %}" class="nav__logo">
+      <span class="site-logo" aria-hidden="true">
+        <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+      </span>
+      <span class="nav__name">Readwoods</span>
+    </a>
+    <div class="nav__search">
+      <input type="text" id="searchInput" placeholder="Search your tree..." autocomplete="off">
+      <div id="searchResults" class="search-dropdown"></div>
     </div>
-    <div class="modal__body">
-      <!-- Node type -->
-      <div class="form-group">
-        <label>Node Type</label>
-        <div class="type-buttons" id="typeButtons">
-          <button type="button" class="type-btn active" data-type="book">📖 Book</button>
-          <button type="button" class="type-btn" data-type="author">✍️ Author</button>
-          <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
-          <button type="button" class="type-btn" data-type="series">📚 Series</button>
-          <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
-        </div>
+    <div class="nav__links">
+      <span class="nav__user">{{ request.user.username }}</span>
+      <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
+      <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
+      <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
+    </div>
+  </nav>
+
+  <main class="canvas-wrap">
+    <svg id="treeCanvas" aria-label="Book tree visualization">
+      <defs>
+        <filter id="barkShadow">
+          <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="rgba(0,0,0,0.55)"/>
+        </filter>
+        <filter id="softGlow">
+          <feGaussianBlur stdDeviation="10" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+        <radialGradient id="bgGrad" cx="50%" cy="35%" r="70%">
+          <stop offset="0%" stop-color="#1a1f17"/>
+          <stop offset="55%" stop-color="#0e120d"/>
+          <stop offset="100%" stop-color="#060705"/>
+        </radialGradient>
+        <linearGradient id="branchWood" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#3a2416"/>
+          <stop offset="45%" stop-color="#5c3a22"/>
+          <stop offset="100%" stop-color="#2a1a10"/>
+        </linearGradient>
+        <linearGradient id="branchSap" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="rgba(255, 235, 205, 0.6)"/>
+          <stop offset="100%" stop-color="rgba(255, 235, 205, 0)"/>
+        </linearGradient>
+        <linearGradient id="stumpBark" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#5a3c24"/>
+          <stop offset="70%" stop-color="#2e1c12"/>
+        </linearGradient>
+        <radialGradient id="stumpGlow" cx="50%" cy="40%" r="60%">
+          <stop offset="0%" stop-color="rgba(244, 214, 164, 0.6)"/>
+          <stop offset="100%" stop-color="rgba(244, 214, 164, 0)"/>
+        </radialGradient>
+      </defs>
+      <rect id="bgRect" fill="url(#bgGrad)"/>
+      <g id="forestBackdrop"></g>
+      <g id="stumpLayer"></g>
+      <g id="linksLayer"></g>
+      <g id="nodesLayer"></g>
+    </svg>
+
+    <div class="minimap" id="minimap">
+      <div class="minimap__header">Overview</div>
+      <svg id="minimapSvg"></svg>
+      <div id="minimapViewport" class="minimap__viewport"></div>
+    </div>
+
+    <div class="zoom-controls">
+      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="zoomReset" title="Reset view">&#8857;</button>
+      <button id="zoomOut" title="Zoom out">-</button>
+    </div>
+
+    <div class="float-bar" id="floatBar">
+      <button class="float-btn" id="scrollTopBtn" title="Go to top">↑ Top</button>
+      <button class="float-btn" id="expandAllBtn">⊞ Expand All</button>
+      <button class="float-btn" id="collapseAllBtn">⊟ Collapse All</button>
+      <button class="float-btn float-btn--primary" id="floatAddBook">+ Node</button>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-spinner"></div>
+      <p>Growing your tree...</p>
+    </div>
+
+    <div class="empty-state" id="emptyState" style="display:none">
+      <div class="empty-state__icon">🌱</div>
+      <h2>Your tree is empty</h2>
+      <p>Add your first book to start growing your Readwoods tree.</p>
+      <button class="btn btn--primary btn--lg" id="emptyAddBtn">+ Add First Node</button>
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="bookModal">
+    <div class="modal book-modal">
+      <div class="modal__header">
+        <h3 id="modalTitle">ADD NEW NODE</h3>
+        <button class="modal__close" id="closeBookModal">✕</button>
       </div>
-      <div class="form-row">
+      <div class="modal__body">
         <div class="form-group">
-          <label>Title *</label>
-          <input type="text" id="fTitle" list="bookSuggestions" placeholder="e.g. The Hobbit" required>
-          <datalist id="bookSuggestions"></datalist>
-        </div>
-        <div class="form-group">
-          <label>Author</label>
-          <input type="text" id="fAuthor" placeholder="e.g. J.R.R. Tolkien">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Genre</label>
-          <input type="text" id="fGenre" list="genreSuggestions" placeholder="e.g. Fantasy">
-          <datalist id="genreSuggestions">
-            <option>Fantasy</option><option>Science Fiction</option>
-            <option>Mystery</option><option>Thriller</option>
-            <option>Classic</option><option>Romance</option>
-            <option>Horror</option><option>Non-Fiction</option>
-          </datalist>
-        </div>
-        <div class="form-group">
-          <label>Year</label>
-          <input type="number" id="fYear" placeholder="e.g. 1937" min="0" max="2030">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>ISBN</label>
-          <input type="text" id="fIsbn" placeholder="e.g. 9780261102217">
-        </div>
-        <div class="form-group">
-          <label>Rating (0–5)</label>
-          <input type="number" id="fRating" min="0" max="5" step="0.5" placeholder="4.5">
-        </div>
-      </div>
-      <!-- Cover preview -->
-      <div class="form-group">
-        <label>Cover Image</label>
-        <div class="cover-picker">
-          <div class="cover-picker__preview" id="coverPreview">
-            <span>No cover</span>
+          <label>Node Type</label>
+          <div class="type-buttons" id="typeButtons">
+            <button type="button" class="type-btn active" data-type="book">📖 Book</button>
+            <button type="button" class="type-btn" data-type="author">✍️ Author</button>
+            <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
+            <button type="button" class="type-btn" data-type="series">📚 Series</button>
+            <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
           </div>
-          <div class="cover-picker__controls">
-            <button type="button" class="btn btn--ghost btn--sm" id="fetchCoverBtn">🔍 Auto-fetch</button>
-            <input type="url" id="fCoverUrl" placeholder="Paste image URL…">
-            <input type="file" id="fCoverFile" accept="image/*" style="display:none">
-            <button type="button" class="btn btn--ghost btn--sm" id="uploadCoverBtn">📁 Upload</button>
-          </div>
         </div>
-      </div>
-      <!-- Parent connection -->
-      <div class="form-group">
-        <label>Connect to (parent node)</label>
-        <select id="fParent">
-          <option value="">— root (no parent) —</option>
-        </select>
-      </div>
-      <!-- Style -->
-      <details class="style-panel">
-        <summary>🎨 Customize Appearance</summary>
-        <div class="style-grid">
+        <div class="form-row">
           <div class="form-group">
-            <label>Node Color</label>
-            <input type="color" id="fColor" value="#1a3a5c">
+            <label>Title *</label>
+            <input type="text" id="fTitle" list="bookSuggestions" placeholder="e.g. The Hobbit" required>
+            <datalist id="bookSuggestions"></datalist>
           </div>
           <div class="form-group">
-            <label>Glow Color</label>
-            <input type="color" id="fGlow" value="#4fc3f7">
-          </div>
-          <div class="form-group">
-            <label>Border Color</label>
-            <input type="color" id="fBorder" value="#4fc3f7">
+            <label>Author</label>
+            <input type="text" id="fAuthor" placeholder="e.g. J.R.R. Tolkien">
           </div>
         </div>
-        <div class="style-grid">
+        <div class="form-row">
           <div class="form-group">
-            <label>Parent Connection Color</label>
-            <input type="color" id="fParentEdgeColor" value="#74d39f">
+            <label>Genre</label>
+            <input type="text" id="fGenre" list="genreSuggestions" placeholder="e.g. Fantasy">
+            <datalist id="genreSuggestions">
+              <option>Fantasy</option><option>Science Fiction</option>
+              <option>Mystery</option><option>Thriller</option>
+              <option>Classic</option><option>Romance</option>
+              <option>Horror</option><option>Non-Fiction</option>
+            </datalist>
           </div>
           <div class="form-group">
-            <label>Parent Connection Style</label>
-            <select id="fParentEdgeStyle">
-              <option value="solid">Solid</option>
+            <label>Year</label>
+            <input type="number" id="fYear" placeholder="e.g. 1937" min="0" max="2030">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>ISBN</label>
+            <input type="text" id="fIsbn" placeholder="e.g. 9780261102217">
+          </div>
+          <div class="form-group">
+            <label>Rating (0-5)</label>
+            <input type="number" id="fRating" min="0" max="5" step="0.5" placeholder="4.5">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Cover Image</label>
+          <div class="cover-picker">
+            <div class="cover-picker__preview" id="coverPreview">
+              <span>No cover</span>
+            </div>
+            <div class="cover-picker__controls">
+              <button type="button" class="btn btn--ghost btn--sm" id="fetchCoverBtn">🔍 Auto-fetch</button>
+              <input type="url" id="fCoverUrl" placeholder="Paste image URL...">
+              <input type="file" id="fCoverFile" accept="image/*" style="display:none">
+              <button type="button" class="btn btn--ghost btn--sm" id="uploadCoverBtn">📁 Upload</button>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Connect to (parent node)</label>
+          <select id="fParent">
+            <option value="">- root (no parent) -</option>
+          </select>
+        </div>
+        <details class="style-panel">
+          <summary>🎨 Customize Appearance</summary>
+          <div class="style-grid">
+            <div class="form-group">
+              <label>Node Color</label>
+              <input type="color" id="fColor" value="#3a2a1c">
+            </div>
+            <div class="form-group">
+              <label>Glow Color</label>
+              <input type="color" id="fGlow" value="#f2c572">
+            </div>
+            <div class="form-group">
+              <label>Border Color</label>
+              <input type="color" id="fBorder" value="#d9b07a">
+            </div>
+          </div>
+          <div class="style-grid">
+            <div class="form-group">
+              <label>Parent Connection Color</label>
+              <input type="color" id="fParentEdgeColor" value="#d7b380">
+            </div>
+            <div class="form-group">
+              <label>Parent Connection Style</label>
+              <select id="fParentEdgeStyle">
+                <option value="solid">Solid</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+                <option value="dash-dot">Dash Dot</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Parent Connection Width</label>
+              <select id="fParentEdgeWidth">
+                <option value="2">Thin</option>
+                <option value="3" selected>Normal</option>
+                <option value="4">Bold</option>
+                <option value="6">Heavy</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Badges</label>
+            <div class="badge-picker" id="badgePicker">
+              <span class="badge-opt" data-badge="⭐">⭐ Favorite</span>
+              <span class="badge-opt" data-badge="🔥">🔥 Must Read</span>
+              <span class="badge-opt" data-badge="📚">📚 Series</span>
+              <span class="badge-opt" data-badge="🏆">🏆 Award</span>
+              <span class="badge-opt" data-badge="💡">💡 Insight</span>
+              <span class="badge-opt" data-badge="🌍">🌍 World-building</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea id="fNotes" rows="3" placeholder="Personal notes about this book..."></textarea>
+          </div>
+        </details>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn--ghost" id="cancelBookModal">Cancel</button>
+        <button class="btn btn--danger" id="deleteNodeBtn" style="display:none">Delete</button>
+        <button class="btn btn--primary" id="saveBookBtn">Save Node</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar" id="sidebar">
+    <button class="sidebar__close" id="closeSidebar">✕</button>
+    <div id="sidebarContent"></div>
+  </div>
+
+  <div id="toastHost" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    'use strict';
+
+    const NODE_W = 250;
+    const NODE_H = 270;
+    const NODE_IMG_H = 200;
+    const H_SEP = 260;
+    const V_SEP = 360;
+
+    const GENRE_COLORS = {
+      'Fantasy':        { bg: '#2f1f18', glow: '#e1b77b', link: '#d9a96a' },
+      'Science Fiction':{ bg: '#1c2c35', glow: '#9cc8d9', link: '#7aa9bf' },
+      'Classic':        { bg: '#2c251a', glow: '#e0c49c', link: '#caa77b' },
+      'Mystery':        { bg: '#2a1e1b', glow: '#d0a07a', link: '#c08c63' },
+      'Thriller':       { bg: '#2b1a17', glow: '#e08b6e', link: '#c87962' },
+      'Romance':        { bg: '#3a231b', glow: '#e5b18b', link: '#d59a75' },
+      'Horror':         { bg: '#20150f', glow: '#c48d6a', link: '#a66c4f' },
+      'default':        { bg: '#2b2016', glow: '#ddb07a', link: '#c89a67' },
+    };
+
+    const PLACEHOLDER_ICONS = {
+      'Fantasy': 'FA',
+      'Science Fiction': 'SF',
+      'Mystery': 'MY',
+      'Classic': 'CL',
+      'Thriller': 'TH',
+      'Romance': 'RO',
+      'Horror': 'HO',
+      'default': 'BK',
+    };
+
+    let allNodes = [];
+    let allEdges = [];
+    let nodeMap = {};
+    let collapsedNodes = new Set();
+    let currentTransform = d3.zoomIdentity;
+    const edgeDashMap = { solid: '', dashed: '10,4', dotted: '2,6', 'dash-dot': '12,4,2,4' };
+    const EDGE_TYPE_PRESETS = {
+      progression: { color: '#d7b380', lineStyle: 'solid', width: 3 },
+      genre: { color: '#f0d2a2', lineStyle: 'dotted', width: 3 },
+      author: { color: '#b4d1c6', lineStyle: 'dash-dot', width: 3 },
+      series: { color: '#f1b560', lineStyle: 'dashed', width: 4 },
+      custom: { color: '#9fc1d6', lineStyle: 'dashed', width: 3 },
+    };
+
+    function showToast(message, level = 'info') {
+      const host = document.getElementById('toastHost');
+      if (!host) { window.alert(message); return; }
+      const labels = { success: 'Saved', error: 'Action failed', info: 'Update' };
+      const toneClass = level === 'error' ? 'app-toast--error' : (level === 'success' ? 'app-toast--success' : '');
+      const lead = labels[level] || labels.info;
+
+      const toastEl = document.createElement('div');
+      toastEl.className = `app-toast ${toneClass}`;
+      toastEl.role = 'status';
+      toastEl.setAttribute('aria-live', 'polite');
+      toastEl.setAttribute('aria-atomic', 'true');
+      toastEl.innerHTML = `
+        <div class="app-toast__msg"><strong>${lead}:</strong> ${message}</div>
+        <button type="button" class="app-toast__close" aria-label="Dismiss">x</button>
+      `;
+
+      host.appendChild(toastEl);
+      const dismiss = () => {
+        toastEl.classList.add('app-toast--hide');
+        setTimeout(() => toastEl.remove(), 180);
+      };
+      toastEl.querySelector('.app-toast__close').addEventListener('click', dismiss);
+      window.setTimeout(dismiss, level === 'error' ? 5200 : 2800);
+    }
+
+    window.showToast = showToast;
+
+    function confirmAction(message, title = 'Please confirm') {
+      return new Promise((resolve) => {
+        const existing = document.querySelector('.app-confirm');
+        if (existing) existing.remove();
+
+        const modalEl = document.createElement('div');
+        modalEl.className = 'app-confirm';
+        modalEl.setAttribute('role', 'dialog');
+        modalEl.setAttribute('aria-modal', 'true');
+        modalEl.innerHTML = `
+          <div class="app-confirm__dialog">
+            <div class="app-confirm__card">
+              <div class="app-confirm__header">
+                <h5 class="app-confirm__title">${title}</h5>
+                <button type="button" class="app-confirm__x" data-role="cancel" aria-label="Close">x</button>
+              </div>
+              <div class="app-confirm__body">${message}</div>
+              <div class="app-confirm__footer">
+                <button type="button" class="btn btn--ghost" data-role="cancel">Cancel</button>
+                <button type="button" class="btn btn--danger" data-role="confirm">Delete</button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modalEl);
+        document.body.classList.add('confirm-open');
+
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+          modalEl.remove();
+          document.body.classList.remove('confirm-open');
+        };
+
+        modalEl.querySelector('[data-role="confirm"]').addEventListener('click', () => finish(true));
+        modalEl.querySelector('[data-role="cancel"]').addEventListener('click', () => finish(false));
+        modalEl.addEventListener('click', (event) => { if (event.target === modalEl) finish(false); });
+        window.addEventListener('keydown', function onEsc(event) {
+          if (event.key !== 'Escape') return;
+          window.removeEventListener('keydown', onEsc);
+          finish(false);
+        }, { once: true });
+      });
+    }
+
+    window.confirmAction = confirmAction;
+
+    const svg = d3.select('#treeCanvas');
+    const backdropLayer = d3.select('#forestBackdrop');
+    const stumpLayer = d3.select('#stumpLayer');
+    const linksLayer = d3.select('#linksLayer');
+    const nodesLayer = d3.select('#nodesLayer');
+    const bgRect = d3.select('#bgRect');
+
+    let W = 0, H = 0;
+    let stumpTreeAnchor = { x: 0, y: 0 };
+
+    function getSize() {
+      const rect = document.getElementById('treeCanvas').getBoundingClientRect();
+      W = rect.width;
+      H = rect.height;
+      bgRect.attr('width', W).attr('height', H);
+      renderForestBackdrop();
+    }
+
+    function renderForestBackdrop() {
+      backdropLayer.selectAll('*').remove();
+      if (!W || !H) return;
+
+      backdropLayer.append('rect')
+        .attr('x', 0)
+        .attr('y', 0)
+        .attr('width', W)
+        .attr('height', H)
+        .attr('fill', '#080a08');
+
+      const fogBands = [
+        { y: H * 0.3, opacity: 0.08 },
+        { y: H * 0.5, opacity: 0.06 },
+        { y: H * 0.7, opacity: 0.05 },
+      ];
+      fogBands.forEach((band, index) => {
+        backdropLayer.append('ellipse')
+          .attr('cx', W * (0.3 + index * 0.2))
+          .attr('cy', band.y)
+          .attr('rx', W * 0.45)
+          .attr('ry', H * 0.12)
+          .attr('fill', '#f4dcc1')
+          .attr('opacity', band.opacity)
+          .style('filter', 'url(#softGlow)');
+      });
+
+      const silhouettes = [
+        { y: H * 0.74, color: '#1c261b', amp: 36, step: 140, alpha: 0.85 },
+        { y: H * 0.82, color: '#222c20', amp: 26, step: 120, alpha: 0.7 },
+        { y: H * 0.9, color: '#293326', amp: 20, step: 110, alpha: 0.6 },
+      ];
+
+      silhouettes.forEach((layer, index) => {
+        let d = `M0,${H} L0,${layer.y}`;
+        for (let x = 0; x <= W + layer.step; x += layer.step) {
+          const wave = Math.sin((x + index * 47) * 0.012) * layer.amp;
+          d += ` L${x},${layer.y - wave}`;
+        }
+        d += ` L${W},${H} Z`;
+        backdropLayer.append('path')
+          .attr('d', d)
+          .attr('fill', layer.color)
+          .attr('opacity', layer.alpha);
+      });
+
+      for (let i = 0; i < 36; i += 1) {
+        const x = (W / 35) * i + Math.sin(i * 1.6) * 10;
+        const trunkBaseY = H * 0.92 + (i % 2) * 8;
+        const trunkHeight = 30 + (i % 5) * 6;
+        backdropLayer.append('line')
+          .attr('x1', x)
+          .attr('y1', trunkBaseY)
+          .attr('x2', x + (i % 3 === 0 ? -4 : 2))
+          .attr('y2', trunkBaseY - trunkHeight)
+          .attr('stroke', '#3d2a1b')
+          .attr('stroke-width', 2)
+          .attr('opacity', 0.5);
+        backdropLayer.append('circle')
+          .attr('cx', x + (i % 3 === 0 ? -4 : 2))
+          .attr('cy', trunkBaseY - trunkHeight - 8)
+          .attr('r', 8 + (i % 4))
+          .attr('fill', '#7d8c6a')
+          .attr('opacity', 0.45);
+      }
+    }
+
+    function renderStump() {
+      stumpLayer.selectAll('*').remove();
+      if (!stumpTreeAnchor.x && !stumpTreeAnchor.y) return;
+
+      const stumpX = stumpTreeAnchor.x;
+      const stumpY = stumpTreeAnchor.y + 120;
+
+      stumpLayer.append('ellipse')
+        .attr('cx', stumpX)
+        .attr('cy', stumpY + 18)
+        .attr('rx', 180)
+        .attr('ry', 38)
+        .attr('fill', 'rgba(0,0,0,0.35)');
+
+      stumpLayer.append('rect')
+        .attr('x', stumpX - 120)
+        .attr('y', stumpY - 120)
+        .attr('width', 240)
+        .attr('height', 140)
+        .attr('rx', 60)
+        .attr('fill', 'url(#stumpBark)')
+        .attr('opacity', 0.9);
+
+      stumpLayer.append('ellipse')
+        .attr('cx', stumpX)
+        .attr('cy', stumpY - 120)
+        .attr('rx', 110)
+        .attr('ry', 36)
+        .attr('fill', '#5f4027')
+        .attr('opacity', 0.9);
+
+      stumpLayer.append('ellipse')
+        .attr('cx', stumpX)
+        .attr('cy', stumpY - 122)
+        .attr('rx', 90)
+        .attr('ry', 26)
+        .attr('fill', '#7c5633')
+        .attr('opacity', 0.85);
+
+      stumpLayer.append('ellipse')
+        .attr('cx', stumpX)
+        .attr('cy', stumpY - 124)
+        .attr('rx', 70)
+        .attr('ry', 20)
+        .attr('fill', '#a27646')
+        .attr('opacity', 0.72);
+
+      stumpLayer.append('ellipse')
+        .attr('cx', stumpX)
+        .attr('cy', stumpY - 120)
+        .attr('rx', 140)
+        .attr('ry', 70)
+        .attr('fill', 'url(#stumpGlow)')
+        .attr('opacity', 0.5);
+    }
+
+    const zoom = d3.zoom()
+      .scaleExtent([0.05, 3])
+      .on('zoom', (event) => {
+        currentTransform = event.transform;
+        stumpLayer.attr('transform', event.transform);
+        linksLayer.attr('transform', event.transform);
+        nodesLayer.attr('transform', event.transform);
+        updateMinimap();
+      });
+
+    svg.call(zoom).on('dblclick.zoom', null);
+
+    document.getElementById('zoomIn').addEventListener('click', () =>
+      svg.transition().duration(300).call(zoom.scaleBy, 1.4));
+    document.getElementById('zoomOut').addEventListener('click', () =>
+      svg.transition().duration(300).call(zoom.scaleBy, 0.7));
+    document.getElementById('zoomReset').addEventListener('click', fitTree);
+
+    async function loadTree() {
+      document.getElementById('loadingOverlay').style.display = 'flex';
+      try {
+        const res = await fetch('/api/tree/', {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        const data = await res.json();
+        allNodes = data.nodes || [];
+        allEdges = data.edges || [];
+        nodeMap = {};
+        allNodes.forEach(n => nodeMap[n.id] = n);
+        window.allNodes = allNodes;
+        window.nodeMap = nodeMap;
+
+        if (allNodes.length === 0) {
+          document.getElementById('loadingOverlay').style.display = 'none';
+          document.getElementById('emptyState').style.display = 'flex';
+          return;
+        }
+
+        buildLayout();
+        renderTree();
+        fitTree();
+      } catch (err) {
+        console.error('Failed to load tree:', err);
+        showToast('Could not load tree data.', 'error');
+      } finally {
+        document.getElementById('loadingOverlay').style.display = 'none';
+      }
+    }
+
+    function renderTreeInstant() {
+      buildLayout();
+      renderTree();
+      updateMinimap();
+    }
+
+    function getEdgeVisualStyle(edge, fallbackColor) {
+      const style = edge.style || {};
+      const lineStyle = style.line_style || style.lineStyle || edge.line_style || edge.lineStyle || 'dashed';
+      const color = style.color || edge.color || fallbackColor;
+      const width = Number(style.width || edge.width || 3);
+      return { lineStyle, color, width };
+    }
+
+    function getParentEdgeVisualStyle(node, fallbackColor, fallbackWidth) {
+      const style = node.style?.parent_edge || node.style?.parentEdge || {};
+      const lineStyle = style.line_style || style.lineStyle || 'solid';
+      const color = style.color || fallbackColor;
+      const width = Number(style.width || fallbackWidth || 3);
+      return { lineStyle, color, width };
+    }
+
+    function buildLayout() {
+      const roots = allNodes.filter(n => !n.parent);
+      const childMap = {};
+      allNodes.forEach(n => { childMap[n.id] = allNodes.filter(c => c.parent === n.id); });
+
+      const positions = {};
+      let totalWidth = 0;
+      const rootLayouts = roots.map(r => computeSubtreeLayout(r, childMap, new Set()));
+
+      let xOffset = 0;
+      roots.forEach((root, i) => {
+        const layout = rootLayouts[i];
+        const defaultX = xOffset + layout.width / 2;
+        const rootX = root.pos_x != null ? root.pos_x : defaultX;
+        const rootY = root.pos_y != null ? root.pos_y : 0;
+        assignPositions(root, childMap, positions, rootX, rootY, layout, new Set(), 0);
+        xOffset += layout.width + H_SEP;
+        totalWidth = xOffset;
+      });
+
+      allNodes.forEach((node) => {
+        if (positions[node.id]) return;
+        const layout = computeSubtreeLayout(node, childMap, new Set());
+        const fallbackX = xOffset + layout.width / 2;
+        const rootX = node.pos_x != null ? node.pos_x : fallbackX;
+        const rootY = node.pos_y != null ? node.pos_y : 0;
+        assignPositions(node, childMap, positions, rootX, rootY, layout, new Set(), 0);
+        xOffset += layout.width + H_SEP;
+      });
+
+      allNodes.forEach(n => {
+        if (positions[n.id]) {
+          n._x = positions[n.id].x;
+          n._y = positions[n.id].y;
+        }
+      });
+
+      if (roots.length > 0) {
+        const rootXs = roots.map(r => positions[r.id]?.x).filter(x => x != null);
+        const avgRootX = rootXs.length ? rootXs.reduce((a, b) => a + b, 0) / rootXs.length : 0;
+        const rootYs = roots.map(r => positions[r.id]?.y).filter(y => y != null);
+        const avgRootY = rootYs.length ? rootYs.reduce((a, b) => a + b, 0) / rootYs.length : 0;
+        stumpTreeAnchor = { x: avgRootX, y: avgRootY + NODE_H * 0.9 + 80 };
+        renderStump();
+      }
+    }
+
+    function computeSubtreeLayout(node, childMap, stack) {
+      if (stack.has(node.id)) { return { width: NODE_W + H_SEP * 0.5 }; }
+      const nextStack = new Set(stack); nextStack.add(node.id);
+      const children = (childMap[node.id] || []).filter(c => !collapsedNodes.has(node.id) && !nextStack.has(c.id));
+      if (children.length === 0) { return { width: NODE_W + H_SEP * 0.5 }; }
+      const childLayouts = children.map(c => computeSubtreeLayout(c, childMap, nextStack));
+      const width = Math.max(childLayouts.reduce((sum, l) => sum + l.width, 0), NODE_W + H_SEP * 0.5);
+      return { width };
+    }
+
+    function assignPositions(node, childMap, positions, cx, cy, layout, stack, depth) {
+      if (stack.has(node.id)) return;
+      const nextStack = new Set(stack); nextStack.add(node.id);
+      positions[node.id] = { x: cx, y: cy };
+      const children = (childMap[node.id] || []).filter(c => !collapsedNodes.has(node.id) && !nextStack.has(c.id));
+      if (children.length === 0) return;
+      const childLayouts = children.map(c => computeSubtreeLayout(c, childMap, nextStack));
+      const totalW = childLayouts.reduce((s, l) => s + l.width, 0);
+
+      const depthScale = Math.max(0.5, 0.92 - depth * 0.08);
+      const spread = Math.max(NODE_W * 1.1, totalW * depthScale);
+      let x = cx - spread / 2;
+      children.forEach((child, i) => {
+        const childWidth = Math.max(NODE_W * 0.95, childLayouts[i].width * depthScale);
+        const childCx = x + childWidth / 2;
+        assignPositions(child, childMap, positions, childCx, cy - V_SEP, childLayouts[i], nextStack, depth + 1);
+        x += childWidth;
+      });
+    }
+
+    function renderTree() {
+      renderLinks();
+      renderNodes();
+      renderGenreLabels();
+    }
+
+    function getTheme(node) {
+      const genre = node.genre || (node.node_type === 'genre' ? node.title : '');
+      return GENRE_COLORS[genre] || GENRE_COLORS['default'];
+    }
+
+    function renderLinks() {
+      linksLayer.selectAll('*').remove();
+
+      const visibleIds = new Set(allNodes.filter(n => !isHiddenByCollapse(n)).map(n => n.id));
+
+      allNodes.forEach(node => {
+        if (node.parent) return;
+        if (!visibleIds.has(node.id)) return;
+        const x1 = stumpTreeAnchor.x;
+        const y1 = stumpTreeAnchor.y;
+        const x2 = node._x;
+        const y2 = node._y + NODE_H * 0.42;
+        const theme = getTheme(node);
+        const path = branchPath(x1, y1, x2, y2, 0.65);
+        const trunkWidth = 9.5;
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link tree-link--wood')
+          .attr('d', path)
+          .style('opacity', 0.9)
+          .style('stroke-width', trunkWidth);
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link')
+          .attr('d', path)
+          .style('stroke', theme.link || theme.glow)
+          .style('opacity', 0.82)
+          .style('stroke-width', 4.5)
+          .style('stroke-dasharray', edgeDashMap.solid);
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link tree-link--highlight')
+          .attr('d', path)
+          .style('opacity', 0.25)
+          .style('stroke-width', 2);
+      });
+
+      allNodes.forEach(node => {
+        if (!node.parent) return;
+        if (!visibleIds.has(node.id) || !visibleIds.has(node.parent)) return;
+        const parent = nodeMap[node.parent];
+        if (!parent) return;
+
+        const x1 = parent._x, y1 = parent._y - NODE_H * 0.46;
+        const x2 = node._x, y2 = node._y + NODE_H * 0.46;
+        const depth = getNodeDepth(node);
+        const theme = getTheme(node);
+
+        const path = branchPath(x1, y1, x2, y2, 0.45);
+        const trunkWidth = Math.max(2.8, 6.8 - depth * 0.45);
+        const branchWidth = Math.max(1.2, trunkWidth * 0.46);
+        const parentVisual = getParentEdgeVisualStyle(node, theme.link || theme.glow, branchWidth);
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link tree-link--wood')
+          .attr('d', path)
+          .style('opacity', 0.85)
+          .style('stroke-width', trunkWidth);
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link')
+          .attr('d', path)
+          .style('stroke', parentVisual.color)
+          .style('opacity', 0.78)
+          .style('stroke-width', Math.max(1.3, parentVisual.width))
+          .style('stroke-dasharray', edgeDashMap[parentVisual.lineStyle] || edgeDashMap.solid);
+
+        linksLayer.append('path')
+          .attr('class', 'tree-link tree-link--highlight')
+          .attr('d', path)
+          .style('opacity', 0.24)
+          .style('stroke-width', Math.max(0.8, parentVisual.width * 0.38));
+      });
+
+      allEdges.forEach(edge => {
+        if (edge.id && edge.id.toString().startsWith('parent-')) return;
+        const src = nodeMap[edge.source];
+        const tgt = nodeMap[edge.target];
+        if (!src || !tgt || !visibleIds.has(src.id) || !visibleIds.has(tgt.id)) return;
+
+        const theme = getTheme(src);
+        const visual = getEdgeVisualStyle(edge, theme.glow);
+        const path = `M${src._x},${src._y} C${src._x},${(src._y + tgt._y)/2} ${tgt._x},${(src._y + tgt._y)/2} ${tgt._x},${tgt._y}`;
+        linksLayer.append('path')
+          .attr('class', 'tree-link tree-link--custom')
+          .attr('d', path)
+          .style('stroke', visual.color)
+          .style('opacity', 0.82)
+          .style('stroke-width', Math.max(1.5, visual.width))
+          .style('stroke-dasharray', edgeDashMap[visual.lineStyle] || edgeDashMap.dashed);
+      });
+    }
+
+    function branchPath(x1, y1, x2, y2, swayScale = 0.5) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const splitY = y1 - Math.max(Math.abs(dy) * 0.42, 40);
+      const swaySeed = Math.sin((x1 + x2 + y1 + y2) * 0.0125);
+      const sway = swaySeed * 24 * swayScale;
+      const midPull = Math.min(48, Math.abs(dx) * 0.35) * (dx > 0 ? 1 : -1);
+      const curl = Math.sin((x1 - x2) * 0.014) * 14 * swayScale;
+      const c1x = x1 + dx * 0.12 + sway + curl;
+      const c1y = y1 - Math.max(Math.abs(dy) * 0.18, 26);
+      const c2x = x1 + dx * 0.3 + midPull * 0.4 + sway * 0.6 - curl * 0.3;
+      const c2y = splitY;
+      const c3x = x1 + dx * 0.7 + midPull * 0.25 - sway * 0.4 + curl * 0.2;
+      const c3y = splitY;
+      const c4x = x2 - dx * 0.08 + sway * 0.2 - curl * 0.4;
+      const c4y = y2 + Math.max(Math.abs(dy) * 0.08, 16);
+      return [
+        `M${x1},${y1}`,
+        `C${c1x},${c1y} ${c2x},${c2y} ${x1 + dx * 0.46},${splitY}`,
+        `C${c3x},${c3y} ${c4x},${c4y} ${x2},${y2}`,
+      ].join(' ');
+    }
+
+    function getNodeDepth(node) {
+      let depth = 0;
+      let current = nodeMap[node.parent];
+      while (current) { depth += 1; current = nodeMap[current.parent]; }
+      return depth;
+    }
+
+    function isHiddenByCollapse(node) {
+      let current = nodeMap[node.parent];
+      while (current) {
+        if (collapsedNodes.has(current.id)) return true;
+        current = nodeMap[current.parent];
+      }
+      return false;
+    }
+
+    function renderNodes() {
+      nodesLayer.selectAll('*').remove();
+      const visible = allNodes.filter(n => !isHiddenByCollapse(n));
+
+      visible.forEach(node => {
+        if (node._x == null) return;
+        const theme = getTheme(node);
+        const x = node._x - NODE_W / 2;
+        const y = node._y - NODE_H / 2;
+
+        const isGenre = node.node_type === 'genre' || node.node_type === 'series';
+        const isCollapsed = collapsedNodes.has(node.id);
+        const childCount = allNodes.filter(c => c.parent === node.id).length;
+
+        const g = nodesLayer.append('g')
+          .attr('class', 'node-group')
+          .attr('data-id', node.id)
+          .attr('transform', `translate(${x}, ${y})`)
+          .style('opacity', 0)
+          .on('mouseenter', () => g.classed('is-hovered', true))
+          .on('mouseleave', () => g.classed('is-hovered', false))
+          .on('click', (event) => { event.stopPropagation(); onNodeClick(node); });
+
+        g.transition().duration(400).style('opacity', 1);
+
+        const glowColor = node.style?.glow || theme.glow;
+        g.append('ellipse')
+          .attr('cx', NODE_W / 2)
+          .attr('cy', NODE_H / 2)
+          .attr('rx', NODE_W * 0.6)
+          .attr('ry', NODE_H * 0.25)
+          .attr('fill', glowColor)
+          .style('opacity', 0.12)
+          .style('filter', 'blur(16px)');
+
+        const bgColor = node.style?.color || theme.bg;
+        const borderColor = node.style?.border || glowColor;
+
+        g.append('rect')
+          .attr('class', 'node-card')
+          .attr('width', NODE_W)
+          .attr('height', NODE_H)
+          .attr('rx', 14)
+          .attr('fill', bgColor)
+          .attr('stroke', borderColor)
+          .attr('stroke-width', isGenre ? 2 : 1.5)
+          .style('filter', 'url(#barkShadow)');
+
+        const imgH = isGenre ? NODE_H * 0.65 : NODE_IMG_H;
+        const coverUrl = node.cover_url || node.cover_image || '';
+
+        if (coverUrl && !isGenre) {
+          const clipId = `clip-${node.id.replace(/-/g, '')}`;
+          g.append('defs').append('clipPath')
+            .attr('id', clipId)
+            .append('rect')
+            .attr('width', NODE_W)
+            .attr('height', imgH)
+            .attr('rx', 14);
+
+          const imgEl = g.append('image')
+            .attr('href', coverUrl)
+            .attr('width', NODE_W)
+            .attr('height', imgH)
+            .attr('clip-path', `url(#${clipId})`)
+            .attr('preserveAspectRatio', 'xMidYMid slice');
+
+          imgEl.on('error', function() {
+            d3.select(this).remove();
+            renderPlaceholder(g, node, imgH, bgColor);
+          });
+        } else {
+          renderPlaceholder(g, node, isGenre ? NODE_H * 0.58 : imgH, bgColor);
+        }
+
+        if (!isGenre) {
+          const gradId = `grad-${node.id.replace(/-/g, '')}`;
+          const defs = g.select('defs').empty() ? g.append('defs') : g.select('defs');
+          const grad = defs.append('linearGradient')
+            .attr('id', gradId)
+            .attr('x1', '0%').attr('y1', '0%')
+            .attr('x2', '0%').attr('y2', '100%');
+          grad.append('stop').attr('offset', '60%').attr('stop-color', 'transparent');
+          grad.append('stop').attr('offset', '100%').attr('stop-color', bgColor);
+
+          g.append('rect')
+            .attr('width', NODE_W).attr('height', imgH + 2)
+            .attr('rx', 14).attr('fill', `url(#${gradId})`);
+        }
+
+        const textY = isGenre ? NODE_H * 0.62 : NODE_IMG_H + 8;
+        const titleLines = wrapText(node.title, NODE_W - 14, 11);
+        titleLines.slice(0, 3).forEach((line, li) => {
+          g.append('text')
+            .attr('class', 'node-title')
+            .attr('x', NODE_W / 2)
+            .attr('y', textY + 14 + li * 22)
+            .text(line);
+        });
+
+        const metaParts = [node.author, node.genre].filter(Boolean);
+        const metaLine = metaParts.slice(0, 2).join(' · ');
+        if (metaLine) {
+          g.append('text')
+            .attr('class', 'node-meta')
+            .attr('x', NODE_W / 2)
+            .attr('y', textY + 14 + Math.min(titleLines.length, 2) * 17 + 2)
+            .text(truncate(metaLine, 22));
+        }
+
+        if (node.rating && !isGenre) {
+          const starY = textY + 14 + Math.min(titleLines.length, 2) * 14 + 16;
+          const stars = '★'.repeat(Math.round(node.rating)).padEnd(5, '☆');
+          g.append('text')
+            .attr('x', NODE_W / 2)
+            .attr('y', starY)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '10px')
+            .attr('fill', '#dac6ad')
+            .text(stars.slice(0, 5));
+        }
+
+        if (node.badges && node.badges.length > 0) {
+          node.badges.slice(0, 3).forEach((badge, bi) => {
+            g.append('text')
+              .attr('class', 'node-badge')
+              .attr('x', 8 + bi * 18)
+              .attr('y', 20)
+              .text(badge);
+          });
+        }
+
+        if (childCount > 0) {
+          const collapseG = g.append('g')
+            .attr('transform', `translate(${NODE_W / 2 - 10}, ${NODE_H - 14})`)
+            .style('cursor', 'pointer')
+            .on('click', (event) => { event.stopPropagation(); toggleCollapse(node.id); });
+
+          collapseG.append('rect')
+            .attr('width', 20).attr('height', 14)
+            .attr('rx', 7)
+            .attr('fill', 'rgba(255, 235, 205, 0.12)')
+            .attr('stroke', 'rgba(255, 225, 185, 0.38)')
+            .attr('stroke-width', 1);
+
+          collapseG.append('text')
+            .attr('x', 10).attr('y', 10)
+            .attr('text-anchor', 'middle')
+            .attr('fill', '#f2e3d0')
+            .attr('font-size', '9px')
+            .text(isCollapsed ? `+${childCount}` : '-');
+        }
+
+        g.append('rect')
+          .attr('class', 'node-hover-bridge')
+          .attr('x', NODE_W - 6)
+          .attr('y', -14)
+          .attr('width', 92)
+          .attr('height', NODE_H + 28)
+          .attr('fill', 'transparent');
+
+        const actionsG = g.append('g')
+          .attr('class', 'node-actions')
+          .attr('transform', `translate(${NODE_W + 12}, -4)`);
+
+        actionsG.append('rect')
+          .attr('class', 'action-rail')
+          .attr('width', 58)
+          .attr('height', 146)
+          .attr('rx', 12)
+          .attr('pointer-events', 'none')
+          .attr('fill', 'rgba(30, 25, 18, 0.84)')
+          .attr('stroke', 'rgba(210, 178, 132, 0.3)')
+          .attr('stroke-width', 1);
+
+        [
+          { icon: '✏️', label: 'Edit', action: () => window.openEditModal(node) },
+          { icon: '➕', label: 'Add child', action: () => window.openAddChildModal(node) },
+          { icon: '🗑️', label: 'Delete', action: () => confirmDelete(node) },
+        ].forEach((btn, i) => {
+          const btnG = actionsG.append('g')
+            .attr('class', 'action-btn')
+            .attr('transform', `translate(8, ${8 + i * 46})`)
+            .attr('aria-label', btn.label)
+            .on('click', (e) => { e.stopPropagation(); btn.action(); });
+
+          btnG.append('rect')
+            .attr('width', 42).attr('height', 42).attr('rx', 10)
+            .attr('fill', 'rgba(10, 12, 10, 0.92)')
+            .attr('stroke', 'rgba(242, 197, 114, 0.45)')
+            .attr('stroke-width', 1.2);
+
+          btnG.append('text')
+            .attr('x', 21).attr('y', 28)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '18px')
+            .text(btn.icon);
+        });
+      });
+    }
+
+    function renderPlaceholder(g, node, imgH, bgColor) {
+      g.append('rect')
+        .attr('width', NODE_W).attr('height', imgH)
+        .attr('rx', 14)
+        .attr('fill', bgColor)
+        .attr('opacity', 0.6);
+
+      const icon = PLACEHOLDER_ICONS[node.genre] || PLACEHOLDER_ICONS['default'];
+      const badgeRadius = Math.max(18, Math.min(34, imgH * 0.16));
+
+      g.append('circle')
+        .attr('cx', NODE_W / 2)
+        .attr('cy', imgH / 2)
+        .attr('r', badgeRadius)
+        .attr('fill', 'rgba(18, 18, 16, 0.72)')
+        .attr('stroke', 'rgba(255, 235, 205, 0.28)')
+        .attr('stroke-width', 1.4);
+
+      g.append('text')
+        .attr('x', NODE_W / 2).attr('y', imgH / 2 + 5)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '16px')
+        .attr('font-weight', 700)
+        .attr('letter-spacing', '0.08em')
+        .attr('fill', '#f4ead8')
+        .text(icon);
+
+      if (node.node_type === 'genre' || node.node_type === 'series') {
+        g.append('text')
+          .attr('x', NODE_W / 2)
+          .attr('y', imgH / 2 + badgeRadius + 16)
+          .attr('text-anchor', 'middle')
+          .attr('font-size', '9px')
+          .attr('font-weight', 600)
+          .attr('letter-spacing', '0.06em')
+          .attr('fill', 'rgba(255, 235, 205, 0.7)')
+          .text('GENRE');
+      }
+
+      if (node.year) {
+        g.append('text')
+          .attr('x', NODE_W / 2).attr('y', imgH / 2 - 10)
+          .attr('text-anchor', 'middle')
+          .attr('font-size', '12px')
+          .attr('fill', 'rgba(214, 199, 178, 0.5)')
+          .text(node.year);
+      }
+    }
+
+    function renderGenreLabels() {
+      nodesLayer.selectAll('.genre-label').remove();
+      const genres = allNodes.filter(n => n.node_type === 'genre' && !isHiddenByCollapse(n));
+      genres.forEach(n => {
+        nodesLayer.append('text')
+          .attr('class', 'genre-label')
+          .attr('x', n._x)
+          .attr('y', n._y - NODE_H / 2 - 24)
+          .attr('text-anchor', 'middle')
+          .text(n.title);
+      });
+    }
+
+    function toggleCollapse(nodeId) {
+      if (collapsedNodes.has(nodeId)) collapsedNodes.delete(nodeId);
+      else collapsedNodes.add(nodeId);
+      buildLayout();
+      renderTree();
+    }
+
+    document.getElementById('expandAllBtn').addEventListener('click', () => {
+      collapsedNodes.clear();
+      buildLayout();
+      renderTree();
+    });
+    document.getElementById('collapseAllBtn').addEventListener('click', () => {
+      const roots = allNodes.filter(n => !n.parent);
+      roots.forEach(r => collapsedNodes.add(r.id));
+      buildLayout();
+      renderTree();
+    });
+
+    function fitTree() {
+      getSize();
+      if (allNodes.length === 0) return;
+
+      const xs = allNodes.filter(n => n._x != null).map(n => n._x);
+      const ys = allNodes.filter(n => n._y != null).map(n => n._y);
+      if (!xs.length) return;
+
+      const minX = Math.min(...xs) - NODE_W / 2 - 60;
+      const maxX = Math.max(...xs) + NODE_W / 2 + 60;
+      const minY = Math.min(...ys) - NODE_H / 2 - 80;
+      const maxY = Math.max(...ys) + NODE_H / 2 + 80;
+
+      const treeW = maxX - minX;
+      const treeH = maxY - minY;
+      const scale = Math.min(W / treeW, H / treeH, 1) * 0.88;
+
+      const tx = (W - treeW * scale) / 2 - minX * scale;
+      const ty = (H - treeH * scale) / 2 - minY * scale;
+
+      svg.transition().duration(700).call(
+        zoom.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      );
+    }
+
+    const minimapSvg = d3.select('#minimapSvg');
+    const MINIMAP_W = 178;
+    const MINIMAP_H = 130;
+
+    function updateMinimap() {
+      minimapSvg.selectAll('*').remove();
+      if (!allNodes.length) return;
+
+      const xs = allNodes.filter(n => n._x != null).map(n => n._x);
+      const ys = allNodes.filter(n => n._y != null).map(n => n._y);
+      if (!xs.length) return;
+
+      const minX = Math.min(...xs) - NODE_W;
+      const maxX = Math.max(...xs) + NODE_W;
+      const minY = Math.min(...ys) - NODE_H;
+      const maxY = Math.max(...ys) + NODE_H;
+      const tW = maxX - minX || 1;
+      const tH = maxY - minY || 1;
+      const scale = Math.min(MINIMAP_W / tW, MINIMAP_H / tH) * 0.9;
+
+      const offX = (MINIMAP_W - tW * scale) / 2;
+      const offY = (MINIMAP_H - tH * scale) / 2;
+
+      allNodes.forEach(node => {
+        if (!node.parent || node._x == null) return;
+        const parent = nodeMap[node.parent];
+        if (!parent || parent._x == null) return;
+        const x1 = offX + (parent._x - minX) * scale;
+        const y1 = offY + (parent._y - minY) * scale;
+        const x2 = offX + (node._x - minX) * scale;
+        const y2 = offY + (node._y - minY) * scale;
+        minimapSvg.append('line')
+          .attr('x1', x1).attr('y1', y1).attr('x2', x2).attr('y2', y2)
+          .attr('stroke', 'rgba(242,197,114,0.25)').attr('stroke-width', 0.8);
+      });
+
+      allNodes
+        .filter(n => n._x != null && !isHiddenByCollapse(n))
+        .forEach(node => {
+          const theme = getTheme(node);
+          const mx = offX + (node._x - minX) * scale;
+          const my = offY + (node._y - minY) * scale;
+          minimapSvg.append('circle')
+            .attr('cx', mx).attr('cy', my)
+            .attr('r', node.node_type === 'genre' ? 4 : 2.5)
+            .attr('fill', node.style?.glow || theme.glow)
+            .attr('opacity', 0.8);
+        });
+
+      const vp = document.getElementById('minimapViewport');
+      if (!currentTransform) return;
+      const vpX = (-currentTransform.x / currentTransform.k - minX) * scale + offX;
+      const vpY = (-currentTransform.y / currentTransform.k - minY) * scale + offY;
+      const vpW = (W / currentTransform.k) * scale;
+      const vpH = (H / currentTransform.k) * scale;
+
+      vp.style.left = `${vpX}px`;
+      vp.style.top = `${vpY + 28}px`;
+      vp.style.width = `${Math.max(vpW, 4)}px`;
+      vp.style.height = `${Math.max(vpH, 4)}px`;
+    }
+
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      searchResults.innerHTML = '';
+      if (!q) { searchResults.classList.remove('active'); return; }
+
+      const matches = allNodes.filter(n =>
+        n.title.toLowerCase().includes(q) ||
+        (n.author || '').toLowerCase().includes(q) ||
+        (n.genre || '').toLowerCase().includes(q)
+      ).slice(0, 8);
+
+      if (matches.length === 0) { searchResults.classList.remove('active'); return; }
+
+      matches.forEach(n => {
+        const div = document.createElement('div');
+        div.className = 'search-item';
+        div.innerHTML = `
+          <img class="search-item__cover" src="${n.cover_url || n.cover_image || ''}" onerror="this.style.display='none'" loading="lazy">
+          <span><strong>${n.title}</strong><br><small style="color:#cbb29a">${n.author || n.genre || ''}</small></span>
+        `;
+        div.addEventListener('click', () => {
+          searchResults.classList.remove('active');
+          searchInput.value = '';
+          panToNode(n);
+        });
+        searchResults.appendChild(div);
+      });
+      searchResults.classList.add('active');
+    });
+
+    document.addEventListener('click', e => {
+      if (!searchResults.contains(e.target) && e.target !== searchInput)
+        searchResults.classList.remove('active');
+    });
+
+    function panToNode(node) {
+      if (node._x == null) return;
+      getSize();
+      const scale = Math.min(currentTransform.k, 1.2);
+      const tx = W / 2 - node._x * scale;
+      const ty = H / 2 - node._y * scale;
+      svg.transition().duration(700).call(
+        zoom.transform,
+        d3.zoomIdentity.translate(tx, ty).scale(scale)
+      );
+    }
+
+    function onNodeClick(node) {
+      const sidebar = document.getElementById('sidebar');
+      const content = document.getElementById('sidebarContent');
+      const children = allNodes.filter(c => c.parent === node.id);
+      const candidates = allNodes.filter(n => n.id !== node.id);
+      const anyNodeOptions = candidates
+        .slice()
+        .sort((a, b) => a.title.localeCompare(b.title))
+        .map(n => `<option value="${n.id}">${n.title}</option>`)
+        .join('');
+      const branchLinkBlock = candidates.length > 0
+        ? `
+          <div class="sidebar-section-title">Connect Node To Any Node</div>
+          <div class="sidebar-actions">
+            <select id="branchTarget_${node.id}" class="sidebar-select">
+              <option value="">Select target node...</option>
+              ${anyNodeOptions}
+            </select>
+            <label class="sidebar-section-title" style="margin-top:2px;">Connection Color</label>
+            <input id="branchEdgeColor_${node.id}" type="color" value="#d9b07a" class="sidebar-select" style="height:38px;padding:4px 8px;">
+            <label class="sidebar-section-title" style="margin-top:2px;">Connection Style</label>
+            <select id="branchEdgeStyle_${node.id}" class="sidebar-select">
               <option value="dashed">Dashed</option>
+              <option value="solid">Solid</option>
               <option value="dotted">Dotted</option>
               <option value="dash-dot">Dash Dot</option>
             </select>
-          </div>
-          <div class="form-group">
-            <label>Parent Connection Width</label>
-            <select id="fParentEdgeWidth">
+            <label class="sidebar-section-title" style="margin-top:2px;">Connection Width</label>
+            <select id="branchEdgeWidth_${node.id}" class="sidebar-select">
               <option value="2">Thin</option>
               <option value="3" selected>Normal</option>
               <option value="4">Bold</option>
               <option value="6">Heavy</option>
             </select>
           </div>
+        `
+        : '';
+
+      const parentOptions = allNodes
+        .filter(n => n.id !== node.id)
+        .sort((a, b) => a.title.localeCompare(b.title))
+        .map(n => `<option value="${n.id}" ${node.parent === n.id ? 'selected' : ''}>${n.title}</option>`)
+        .join('');
+
+      const connectedEdges = allEdges.filter(e => {
+        if (!e || !e.id) return false;
+        if (String(e.id).startsWith('parent-')) return false;
+        return e.source === node.id || e.target === node.id;
+      });
+
+      const edgeListBlock = connectedEdges.length > 0
+        ? `
+          <div class="sidebar-section-title">Existing Connections</div>
+          <ul class="sidebar-children">
+            ${connectedEdges.map(e => {
+              const edgeDomId = String(e.id).replace(/[^a-zA-Z0-9_-]/g, '');
+              const otherId = e.source === node.id ? e.target : e.source;
+              const other = nodeMap[otherId];
+              const otherTitle = other ? other.title : otherId;
+              const preset = EDGE_TYPE_PRESETS[e.edge_type] || EDGE_TYPE_PRESETS.custom;
+              const edgeColor = e.style?.color || preset.color;
+              const edgeLineStyle = e.style?.line_style || preset.lineStyle;
+              const edgeWidth = Number(e.style?.width || preset.width);
+              return `<li class="sidebar-child sidebar-child--connection">
+                <div class="connection-row-head">
+                  <span>${otherTitle} <small style="color:#cbb29a;">(${e.edge_type || 'custom'})</small></span>
+                </div>
+                <div class="connection-style-grid">
+                  <label class="sidebar-section-title" style="margin:0;">Color</label>
+                  <input id="edgeColor_${edgeDomId}" type="color" value="${edgeColor}" class="sidebar-select" style="height:34px;padding:3px 6px;">
+                  <label class="sidebar-section-title" style="margin:0;">Style</label>
+                  <select id="edgeStyle_${edgeDomId}" class="sidebar-select">
+                    <option value="solid" ${edgeLineStyle === 'solid' ? 'selected' : ''}>Solid</option>
+                    <option value="dashed" ${edgeLineStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
+                    <option value="dotted" ${edgeLineStyle === 'dotted' ? 'selected' : ''}>Dotted</option>
+                    <option value="dash-dot" ${edgeLineStyle === 'dash-dot' ? 'selected' : ''}>Dash Dot</option>
+                  </select>
+                  <label class="sidebar-section-title" style="margin:0;">Width</label>
+                  <select id="edgeWidth_${edgeDomId}" class="sidebar-select">
+                    <option value="2" ${edgeWidth === 2 ? 'selected' : ''}>Thin</option>
+                    <option value="3" ${edgeWidth === 3 ? 'selected' : ''}>Normal</option>
+                    <option value="4" ${edgeWidth === 4 ? 'selected' : ''}>Bold</option>
+                    <option value="6" ${edgeWidth === 6 ? 'selected' : ''}>Heavy</option>
+                  </select>
+                </div>
+                <div class="connection-row-actions">
+                  <button class="btn btn--ghost btn--sm" onclick="updateConnectionStyle('${e.id}','edgeColor_${edgeDomId}','edgeStyle_${edgeDomId}','edgeWidth_${edgeDomId}')">Save</button>
+                  <button class="btn btn--danger btn--sm" onclick="deleteConnection('${e.id}')">Unlink</button>
+                </div>
+              </li>`;
+            }).join('')}
+          </ul>
+        `
+        : '';
+
+      content.innerHTML = `
+        ${(node.cover_url || node.cover_image)
+          ? `<img class="sidebar-cover" src="${node.cover_url || node.cover_image}" loading="lazy" onerror="this.style.display='none'">`
+          : `<div class="sidebar-cover" style="display:flex;align-items:center;justify-content:center;font-size:3rem;background:var(--bg-dark)">${PLACEHOLDER_ICONS[node.genre]||'📖'}</div>`}
+        <div class="sidebar-title">${node.title}</div>
+        <div class="sidebar-meta">
+          ${[node.author, node.genre, node.year && `(${node.year})`].filter(Boolean).join(' · ')}
+          ${node.rating ? ` · ${'★'.repeat(Math.round(node.rating))}` : ''}
         </div>
-        <div class="form-group">
-          <label>Badges</label>
-          <div class="badge-picker" id="badgePicker">
-            <span class="badge-opt" data-badge="⭐">⭐ Favorite</span>
-            <span class="badge-opt" data-badge="🔥">🔥 Must Read</span>
-            <span class="badge-opt" data-badge="📚">📚 Series</span>
-            <span class="badge-opt" data-badge="🏆">🏆 Award</span>
-            <span class="badge-opt" data-badge="💡">💡 Insight</span>
-            <span class="badge-opt" data-badge="🌍">🌍 World-building</span>
+        ${(node.badges||[]).length > 0
+          ? `<div class="sidebar-badges">${node.badges.map(b => `<span class="sidebar-badge">${b}</span>`).join('')}</div>`
+          : ''}
+        ${node.notes ? `<p class="sidebar-notes">${node.notes}</p>` : ''}
+        ${node.description ? `<p class="sidebar-notes">${node.description}</p>` : ''}
+        <div class="sidebar-actions">
+          <button class="btn btn--ghost" onclick="window.openEditModal(${JSON.stringify(node).replace(/"/g,'&quot;')})">✏️ Edit Node</button>
+          <button class="btn btn--ghost" onclick="window.openAddChildModal(${JSON.stringify(node).replace(/"/g,'&quot;')})">➕ Add Child Node</button>
+          <button class="btn btn--danger" onclick="confirmDelete(${JSON.stringify(node).replace(/"/g,'&quot;')})">🗑️ Delete</button>
+        </div>
+        ${branchLinkBlock}
+        ${edgeListBlock}
+        <div class="sidebar-section-title">Quick Appearance</div>
+        <div class="sidebar-actions">
+          <label class="sidebar-section-title" style="margin-top:2px;">Node Color</label>
+          <input id="quickNodeColor_${node.id}" type="color" value="${node.style?.color || '#3a2a1c'}" class="sidebar-select" style="height:38px;padding:4px 8px;">
+          <label class="sidebar-section-title" style="margin-top:2px;">Glow Color</label>
+          <input id="quickNodeGlow_${node.id}" type="color" value="${node.style?.glow || '#f2c572'}" class="sidebar-select" style="height:38px;padding:4px 8px;">
+          <label class="sidebar-section-title" style="margin-top:2px;">Border Color</label>
+          <input id="quickNodeBorder_${node.id}" type="color" value="${node.style?.border || '#d9b07a'}" class="sidebar-select" style="height:38px;padding:4px 8px;">
+          <label class="sidebar-section-title" style="margin-top:2px;">Parent Connection Color</label>
+          <input id="quickParentEdgeColor_${node.id}" type="color" value="${node.style?.parent_edge?.color || '#d7b380'}" class="sidebar-select" style="height:38px;padding:4px 8px;">
+          <label class="sidebar-section-title" style="margin-top:2px;">Parent Connection Style</label>
+          <select id="quickParentEdgeStyle_${node.id}" class="sidebar-select">
+            <option value="solid" ${(node.style?.parent_edge?.line_style || 'solid') === 'solid' ? 'selected' : ''}>Solid</option>
+            <option value="dashed" ${(node.style?.parent_edge?.line_style || '') === 'dashed' ? 'selected' : ''}>Dashed</option>
+            <option value="dotted" ${(node.style?.parent_edge?.line_style || '') === 'dotted' ? 'selected' : ''}>Dotted</option>
+            <option value="dash-dot" ${(node.style?.parent_edge?.line_style || '') === 'dash-dot' ? 'selected' : ''}>Dash Dot</option>
+          </select>
+          <label class="sidebar-section-title" style="margin-top:2px;">Parent Connection Width</label>
+          <select id="quickParentEdgeWidth_${node.id}" class="sidebar-select">
+            <option value="2" ${(Number(node.style?.parent_edge?.width || 3) === 2) ? 'selected' : ''}>Thin</option>
+            <option value="3" ${(Number(node.style?.parent_edge?.width || 3) === 3) ? 'selected' : ''}>Normal</option>
+            <option value="4" ${(Number(node.style?.parent_edge?.width || 3) === 4) ? 'selected' : ''}>Bold</option>
+            <option value="6" ${(Number(node.style?.parent_edge?.width || 3) === 6) ? 'selected' : ''}>Heavy</option>
+          </select>
+        </div>
+        <div class="sidebar-section-title">Change Parent</div>
+        <div class="sidebar-actions">
+          <select id="parentTarget_${node.id}" class="sidebar-select">
+            <option value="">No parent (make root)</option>
+            ${parentOptions}
+          </select>
+        </div>
+        ${!node.parent ? `
+          <div class="sidebar-section-title">Rearrange Main Branch</div>
+          <div class="sidebar-actions">
+            <button class="btn btn--ghost" onclick="nudgeRootNode(${JSON.stringify(node).replace(/"/g,'&quot;')}, -180, 0)">⬅ Move Left</button>
+            <button class="btn btn--ghost" onclick="nudgeRootNode(${JSON.stringify(node).replace(/"/g,'&quot;')}, 180, 0)">Move Right ➡</button>
           </div>
+          <div class="sidebar-actions">
+            <button class="btn btn--ghost" onclick="nudgeRootNode(${JSON.stringify(node).replace(/"/g,'&quot;')}, 0, -120)">⬆ Move Up</button>
+            <button class="btn btn--ghost" onclick="nudgeRootNode(${JSON.stringify(node).replace(/"/g,'&quot;')}, 0, 120)">Move Down ⬇</button>
+          </div>
+        ` : ''}
+        ${node.parent ? `
+          <div class="sidebar-section-title">Main Branch Tools</div>
+          <div class="sidebar-actions">
+            <button class="btn btn--ghost" onclick="promoteToRoot(${JSON.stringify(node).replace(/"/g,'&quot;')})">⬆ Promote to Main Node</button>
+          </div>
+        ` : ''}
+        ${children.length > 0 ? `
+          <div class="sidebar-section-title">Connected (${children.length})</div>
+          <ul class="sidebar-children">
+            ${children.slice(0, 6).map(c =>
+              `<li class="sidebar-child" onclick="panToNode__${c.id.replace(/-/g,'')}">${c.title}</li>`
+            ).join('')}
+          </ul>
+        ` : ''}
+        <div class="sidebar-section-title">Apply Changes</div>
+        <div class="sidebar-actions">
+          <button class="btn btn--primary" onclick="applyNodeChanges('${node.id}')">Apply</button>
         </div>
-        <div class="form-group">
-          <label>Notes</label>
-          <textarea id="fNotes" rows="3" placeholder="Personal notes about this book…"></textarea>
-        </div>
-      </details>
-    </div>
-    <div class="modal__footer">
-      <button class="btn btn--ghost" id="cancelBookModal">Cancel</button>
-      <button class="btn btn--danger" id="deleteNodeBtn" style="display:none">Delete</button>
-      <button class="btn btn--primary" id="saveBookBtn">Save Node</button>
-    </div>
-  </div>
-</div>
+      `;
 
-<!-- NODE INFO SIDEBAR -->
-<div class="sidebar" id="sidebar">
-  <button class="sidebar__close" id="closeSidebar">✕</button>
-  <div id="sidebarContent"></div>
-</div>
+      children.slice(0, 6).forEach(c => {
+        const li = content.querySelector(`[onclick="panToNode__${c.id.replace(/-/g,'')}"]`);
+        if (li) li.addEventListener('click', () => panToNode(c));
+      });
 
-<div id="toastHost" aria-live="polite" aria-atomic="true"></div>
+      sidebar.classList.add('open');
+    }
 
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'js/tree_viz.js' %}?v=20260406e"></script>
-<script src="{% static 'js/tree_modal.js' %}?v=20260406e"></script>
-{% endblock %}
+    document.getElementById('closeSidebar').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.remove('open');
+    });
+
+    async function confirmDelete(node) {
+      const ok = await confirmAction(
+        `Delete "${node.title}"? Child nodes will be unlinked from it.`,
+        'Delete node'
+      );
+      if (!ok) return;
+      try {
+        const res = await fetch(`/api/nodes/${node.id}/`, {
+          method: 'DELETE',
+          headers: { 'X-CSRFToken': getCsrf() },
+        });
+        if (!res.ok) { showToast('Failed to delete node.', 'error'); return; }
+        removeTreeNode(node.id);
+        document.getElementById('sidebar').classList.remove('open');
+        showToast(`Deleted "${node.title}".`, 'success');
+      } catch (e) {
+        showToast('Failed to delete node.', 'error');
+      }
+    }
+    window.confirmDelete = confirmDelete;
+
+    async function connectNodes(sourceId, selectId, colorId, styleId, widthId) {
+      const select = document.getElementById(selectId);
+      const targetId = select ? select.value : '';
+      if (!targetId) { showToast('Please select a target node.', 'error'); return; }
+
+      const sourceNode = nodeMap[sourceId];
+      const targetNode = nodeMap[targetId];
+      if (!sourceNode || !targetNode) { showToast('Could not resolve selected nodes.', 'error'); return; }
+
+      const colorInput = colorId ? document.getElementById(colorId) : null;
+      const styleInput = styleId ? document.getElementById(styleId) : null;
+      const widthInput = widthId ? document.getElementById(widthId) : null;
+      const preset = EDGE_TYPE_PRESETS.custom;
+      const edgeStyle = {
+        color: colorInput?.value || preset.color,
+        line_style: styleInput?.value || preset.lineStyle,
+        width: Number(widthInput?.value || preset.width),
+      };
+
+      try {
+        const edgeType = 'custom';
+        const res = await fetch('/api/edges/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({
+            source: sourceNode.id,
+            target: targetNode.id,
+            edge_type: edgeType,
+            label: `${sourceNode.title} ↔ ${targetNode.title}`,
+            style: edgeStyle,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.detail || 'Failed to connect branches.', 'error');
+          return;
+        }
+
+        const created = await res.json();
+        upsertTreeEdge(created);
+        showToast('Connection created.', 'success');
+      } catch (_) {
+        showToast('Network error while connecting branches.', 'error');
+      }
+    }
+    window.connectNodes = connectNodes;
+
+    async function connectGenreBranch(sourceNode) {
+      const allGenreNodes = allNodes.filter(n => n.node_type === 'genre' && n.id !== sourceNode.id);
+      if (!allGenreNodes.length) { showToast('No other genre nodes found to connect.', 'error'); return; }
+
+      const available = allGenreNodes.slice(0, 12).map(n => n.title).join(', ');
+      const typed = window.prompt(`Connect "${sourceNode.title}" to which genre?\nExamples: ${available}`);
+      if (!typed) return;
+
+      const targetNode = allGenreNodes.find(n => n.title.toLowerCase() === typed.trim().toLowerCase());
+      if (!targetNode) { showToast('Could not find a matching genre node by that title.', 'error'); return; }
+
+      try {
+        const edgeType = sourceNode.node_type === 'genre' && targetNode.node_type === 'genre' ? 'genre' : 'custom';
+        const res = await fetch('/api/edges/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({
+            source: sourceNode.id,
+            target: targetNode.id,
+            edge_type: edgeType,
+            label: `${sourceNode.title} → ${targetNode.title}`,
+            style: { color: '#d7b380', line_style: 'dashed', width: 3 },
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.detail || 'Failed to connect branches.', 'error');
+          return;
+        }
+
+        const created = await res.json();
+        upsertTreeEdge(created);
+        showToast('Branch connection added.', 'success');
+      } catch (_) {
+        showToast('Network error while connecting branches.', 'error');
+      }
+    }
+    window.connectGenreBranch = connectGenreBranch;
+
+    async function deleteConnection(edgeId) {
+      if (!edgeId) return;
+      try {
+        const res = await fetch(`/api/edges/${edgeId}/`, {
+          method: 'DELETE',
+          headers: { 'X-CSRFToken': getCsrf() },
+        });
+        if (!res.ok) { showToast('Failed to delete connection.', 'error'); return; }
+        removeTreeEdge(edgeId);
+        document.getElementById('sidebar').classList.remove('open');
+        showToast('Connection deleted.', 'success');
+      } catch (_) {
+        showToast('Network error while deleting connection.', 'error');
+      }
+    }
+    window.deleteConnection = deleteConnection;
+
+    async function updateConnectionStyle(edgeId, colorId, styleId, widthId) {
+      const edge = allEdges.find(e => String(e.id) === String(edgeId));
+      if (!edge) { showToast('Connection not found.', 'error'); return; }
+
+      const colorInput = document.getElementById(colorId);
+      const styleInput = document.getElementById(styleId);
+      const widthInput = document.getElementById(widthId);
+      const preset = EDGE_TYPE_PRESETS[edge.edge_type] || EDGE_TYPE_PRESETS.custom;
+      const stylePayload = {
+        color: colorInput?.value || edge.style?.color || preset.color,
+        line_style: styleInput?.value || edge.style?.line_style || preset.lineStyle,
+        width: Number(widthInput?.value || edge.style?.width || preset.width),
+      };
+
+      try {
+        const res = await fetch(`/api/edges/${edgeId}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({ style: stylePayload }),
+        });
+
+        if (!res.ok) { showToast('Failed to update connection style.', 'error'); return; }
+
+        const savedEdge = await res.json();
+        upsertTreeEdge(savedEdge);
+        showToast('Connection style updated.', 'success');
+      } catch (_) {
+        showToast('Network error while updating connection style.', 'error');
+      }
+    }
+    window.updateConnectionStyle = updateConnectionStyle;
+
+    async function applyNodeChanges(nodeId) {
+      const node = nodeMap[nodeId];
+      if (!node) return;
+
+      const stylePayload = {
+        color: document.getElementById(`quickNodeColor_${nodeId}`)?.value || node.style?.color || '#3a2a1c',
+        glow: document.getElementById(`quickNodeGlow_${nodeId}`)?.value || node.style?.glow || '#f2c572',
+        border: document.getElementById(`quickNodeBorder_${nodeId}`)?.value || node.style?.border || '#d9b07a',
+        parent_edge: {
+          color: document.getElementById(`quickParentEdgeColor_${nodeId}`)?.value || node.style?.parent_edge?.color || '#d7b380',
+          line_style: document.getElementById(`quickParentEdgeStyle_${nodeId}`)?.value || node.style?.parent_edge?.line_style || 'solid',
+          width: Number(document.getElementById(`quickParentEdgeWidth_${nodeId}`)?.value || node.style?.parent_edge?.width || 3),
+        },
+      };
+
+      try {
+        const styleRes = await fetch(`/api/nodes/${nodeId}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({ style: stylePayload }),
+        });
+
+        if (!styleRes.ok) { showToast('Failed to apply style changes.', 'error'); return; }
+
+        const savedNode = await styleRes.json();
+        upsertTreeNode(savedNode);
+
+        const parentSelectId = `parentTarget_${nodeId}`;
+        const parentSelect = document.getElementById(parentSelectId);
+        const selectedParent = parentSelect ? (parentSelect.value || null) : node.parent;
+        if (selectedParent !== (node.parent || null)) {
+          await reparentNode(nodeId, parentSelectId);
+        }
+
+        const branchTargetEl = document.getElementById(`branchTarget_${nodeId}`);
+        if (branchTargetEl && branchTargetEl.value) {
+          await connectNodes(
+            nodeId,
+            `branchTarget_${nodeId}`,
+            `branchEdgeColor_${nodeId}`,
+            `branchEdgeStyle_${nodeId}`,
+            `branchEdgeWidth_${nodeId}`,
+          );
+          branchTargetEl.value = '';
+        }
+
+        showToast('Changes applied.', 'success');
+      } catch (_) {
+        showToast('Could not apply changes right now.', 'error');
+      }
+    }
+    window.applyNodeChanges = applyNodeChanges;
+
+    async function reparentNode(nodeId, selectId) {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      const parentId = select.value || null;
+
+      try {
+        const res = await fetch(`/api/nodes/${nodeId}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({ parent: parentId }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.parent?.[0] || err.detail || 'Failed to move node under selected parent.', 'error');
+          return;
+        }
+
+        const node = nodeMap[nodeId];
+        if (node) {
+          node.parent = parentId;
+          renderTreeInstant();
+        }
+        document.getElementById('sidebar').classList.remove('open');
+        showToast('Parent updated instantly.', 'success');
+      } catch (_) {
+        showToast('Network error while changing parent.', 'error');
+      }
+    }
+    window.reparentNode = reparentNode;
+
+    async function nudgeRootNode(node, dx, dy) {
+      const localNode = nodeMap[node.id] || node;
+      const baseX = Number(localNode.pos_x != null ? localNode.pos_x : localNode._x || 0);
+      const baseY = Number(localNode.pos_y != null ? localNode.pos_y : localNode._y || 0);
+      const payload = { pos_x: baseX + dx, pos_y: baseY + dy };
+
+      try {
+        const res = await fetch(`/api/nodes/${node.id}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) { showToast('Failed to move this main branch.', 'error'); return; }
+
+        if (localNode) {
+          localNode.pos_x = payload.pos_x;
+          localNode.pos_y = payload.pos_y;
+          renderTreeInstant();
+        } else {
+          buildLayout();
+          renderTree();
+          updateMinimap();
+        }
+      } catch (_) {
+        showToast('Network error while moving branch.', 'error');
+      }
+    }
+    window.nudgeRootNode = nudgeRootNode;
+
+    async function promoteToRoot(node) {
+      try {
+        const res = await fetch(`/api/nodes/${node.id}/`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({ parent: null }),
+        });
+
+        if (!res.ok) { showToast('Failed to promote node to main branch.', 'error'); return; }
+
+        const localNode = nodeMap[node.id];
+        if (localNode) {
+          localNode.parent = null;
+          renderTreeInstant();
+        }
+        showToast('Node promoted to main branch.', 'success');
+      } catch (_) {
+        showToast('Network error while promoting node.', 'error');
+      }
+    }
+    window.promoteToRoot = promoteToRoot;
+
+    function getCsrf() {
+      const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+      return cookie ? cookie.split('=')[1] : '';
+    }
+
+    function upsertTreeNode(rawNode) {
+      if (!rawNode || !rawNode.id) return null;
+      const node = { ...rawNode, id: String(rawNode.id), parent: rawNode.parent ? String(rawNode.parent) : null };
+      const idx = allNodes.findIndex(n => n.id === node.id);
+      if (idx >= 0) { allNodes[idx] = { ...allNodes[idx], ...node }; }
+      else { allNodes.push(node); }
+      nodeMap[node.id] = idx >= 0 ? allNodes[idx] : node;
+      window.allNodes = allNodes;
+      window.nodeMap = nodeMap;
+      renderTreeInstant();
+      return nodeMap[node.id];
+    }
+
+    function removeTreeNode(nodeId) {
+      const id = String(nodeId);
+      allNodes = allNodes.filter(node => node.id !== id);
+      allNodes.forEach((node) => { if (String(node.parent || '') === id) node.parent = null; });
+      allEdges = allEdges.filter((edge) => {
+        if (!edge) return false;
+        const sourceId = String(edge.source || '');
+        const targetId = String(edge.target || '');
+        return sourceId !== id && targetId !== id;
+      });
+      delete nodeMap[id];
+      nodeMap = {};
+      allNodes.forEach((node) => { nodeMap[node.id] = node; });
+      window.allNodes = allNodes;
+      window.nodeMap = nodeMap;
+      renderTreeInstant();
+    }
+
+    function upsertTreeEdge(rawEdge) {
+      if (!rawEdge || !rawEdge.id) return;
+      const edge = { ...rawEdge, id: String(rawEdge.id), source: String(rawEdge.source), target: String(rawEdge.target) };
+      const idx = allEdges.findIndex(e => String(e.id) === edge.id);
+      if (idx >= 0) { allEdges[idx] = { ...allEdges[idx], ...edge }; }
+      else { allEdges.push(edge); }
+      window.allNodes = allNodes;
+      window.nodeMap = nodeMap;
+      renderTreeInstant();
+    }
+
+    function removeTreeEdge(edgeId) {
+      const id = String(edgeId);
+      allEdges = allEdges.filter(edge => String(edge.id) !== id);
+      window.allNodes = allNodes;
+      window.nodeMap = nodeMap;
+      renderTreeInstant();
+    }
+
+    function wrapText(text, maxWidth, fontSize) {
+      const avgCharW = fontSize * 0.9;
+      const maxChars = Math.floor(maxWidth / avgCharW);
+      const words = text.split(' ');
+      const lines = [];
+      let current = '';
+      words.forEach(word => {
+        if ((current + ' ' + word).trim().length <= maxChars) {
+          current = (current + ' ' + word).trim();
+        } else {
+          if (current) lines.push(current);
+          current = word;
+        }
+      });
+      if (current) lines.push(current);
+      return lines;
+    }
+
+    function truncate(str, max) {
+      return str.length > max ? str.slice(0, max - 1) + '...' : str;
+    }
+
+    window.addEventListener('resize', () => { getSize(); bgRect.attr('width', W).attr('height', H); updateMinimap(); });
+
+    window.loadTree = loadTree;
+    window.panToNode = panToNode;
+    window.getTheme = getTheme;
+    window.fitTree = fitTree;
+    window.renderTreeInstant = renderTreeInstant;
+    window.upsertTreeNode = upsertTreeNode;
+    window.removeTreeNode = removeTreeNode;
+    window.upsertTreeEdge = upsertTreeEdge;
+    window.removeTreeEdge = removeTreeEdge;
+    window.allNodes = allNodes;
+    window.nodeMap = nodeMap;
+
+    getSize();
+    loadTree();
+  </script>
+  <script>
+    'use strict';
+
+    (function () {
+      function notify(message, level = 'info') {
+        if (typeof window.showToast === 'function') { window.showToast(message, level); return; }
+        alert(message);
+      }
+
+      const modal = document.getElementById('bookModal');
+      const overlay = modal;
+
+      const fTitle    = document.getElementById('fTitle');
+      const fAuthor   = document.getElementById('fAuthor');
+      const fGenre    = document.getElementById('fGenre');
+      const fYear     = document.getElementById('fYear');
+      const fIsbn     = document.getElementById('fIsbn');
+      const fRating   = document.getElementById('fRating');
+      const fCoverUrl = document.getElementById('fCoverUrl');
+      const fCoverFile= document.getElementById('fCoverFile');
+      const fParent   = document.getElementById('fParent');
+      const fColor    = document.getElementById('fColor');
+      const fGlow     = document.getElementById('fGlow');
+      const fBorder   = document.getElementById('fBorder');
+      const fParentEdgeColor = document.getElementById('fParentEdgeColor');
+      const fParentEdgeStyle = document.getElementById('fParentEdgeStyle');
+      const fParentEdgeWidth = document.getElementById('fParentEdgeWidth');
+      const fNotes    = document.getElementById('fNotes');
+      const coverPreview = document.getElementById('coverPreview');
+      const modalTitle   = document.getElementById('modalTitle');
+      const deleteBtn    = document.getElementById('deleteNodeBtn');
+      const bookSuggestions = document.getElementById('bookSuggestions');
+
+      let editingNode = null;
+      let selectedType = 'book';
+      let selectedBadges = new Set();
+      let autocompleteOptions = [];
+
+      function openModal() {
+        fParent.innerHTML = '<option value="">- root (no parent) -</option>';
+        (window.allNodes || []).forEach(n => {
+          const opt = document.createElement('option');
+          opt.value = n.id;
+          opt.textContent = `${n.title} (${n.node_type})`;
+          fParent.appendChild(opt);
+        });
+        overlay.classList.add('open');
+      }
+
+      function closeModal() {
+        overlay.classList.remove('open');
+        resetForm();
+      }
+
+      function resetForm() {
+        editingNode = null;
+        fTitle.value = ''; fAuthor.value = ''; fGenre.value = '';
+        fYear.value = ''; fIsbn.value = ''; fRating.value = '';
+        fCoverUrl.value = ''; fNotes.value = '';
+        fParent.value = '';
+        fColor.value = '#3a2a1c';
+        fGlow.value = '#f2c572';
+        fBorder.value = '#d9b07a';
+        if (fParentEdgeColor) fParentEdgeColor.value = '#d7b380';
+        if (fParentEdgeStyle) fParentEdgeStyle.value = 'solid';
+        if (fParentEdgeWidth) fParentEdgeWidth.value = '3';
+        coverPreview.innerHTML = '<span>No cover</span>';
+        selectedType = 'book';
+        selectedBadges = new Set();
+        updateTypeButtons();
+        updateBadges();
+        modalTitle.textContent = 'ADD NEW NODE';
+        deleteBtn.style.display = 'none';
+        autocompleteOptions = [];
+        if (bookSuggestions) bookSuggestions.innerHTML = '';
+      }
+
+      function openAddModal(preParent) {
+        resetForm();
+        if (preParent) {
+          openModal();
+          const opt = document.querySelector(`#fParent option[value="${preParent.id}"]`);
+          if (opt) fParent.value = preParent.id;
+        } else { openModal(); }
+        modalTitle.textContent = 'ADD NEW NODE';
+      }
+      window.openAddModal = openAddModal;
+
+      function openAddChildModal(parentNode) {
+        document.getElementById('sidebar').classList.remove('open');
+        openAddModal(parentNode);
+      }
+      window.openAddChildModal = openAddChildModal;
+
+      function openEditModal(node) {
+        document.getElementById('sidebar').classList.remove('open');
+        editingNode = node;
+        openModal();
+        modalTitle.textContent = 'EDIT NODE';
+        deleteBtn.style.display = 'block';
+
+        fTitle.value  = node.title || '';
+        fAuthor.value = node.author || '';
+        fGenre.value  = node.genre || '';
+        fYear.value   = node.year || '';
+        fIsbn.value   = node.isbn || '';
+        fRating.value = node.rating || '';
+        fNotes.value  = node.notes || '';
+        fCoverUrl.value = node.cover_image || '';
+        if (node.parent) fParent.value = node.parent;
+
+        if (node.style) {
+          fColor.value  = node.style.color  || '#3a2a1c';
+          fGlow.value   = node.style.glow   || '#f2c572';
+          fBorder.value = node.style.border || '#d9b07a';
+          const parentEdge = node.style.parent_edge || node.style.parentEdge || {};
+          if (fParentEdgeColor) fParentEdgeColor.value = parentEdge.color || '#d7b380';
+          if (fParentEdgeStyle) fParentEdgeStyle.value = parentEdge.line_style || parentEdge.lineStyle || 'solid';
+          if (fParentEdgeWidth) fParentEdgeWidth.value = String(parentEdge.width || 3);
+        }
+
+        selectedType = node.node_type || 'book';
+        selectedBadges = new Set(node.badges || []);
+        updateTypeButtons();
+        updateBadges();
+
+        const coverSrc = node.cover_url || node.cover_image;
+        if (coverSrc) {
+          coverPreview.innerHTML = `<img src="${coverSrc}" style="width:100%;height:100%;object-fit:cover">`;
+        }
+      }
+      window.openEditModal = openEditModal;
+
+      document.querySelectorAll('.type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedType = btn.dataset.type;
+          updateTypeButtons();
+        });
+      });
+
+      function updateTypeButtons() {
+        document.querySelectorAll('.type-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.type === selectedType);
+        });
+      }
+
+      document.querySelectorAll('.badge-opt').forEach(badge => {
+        badge.addEventListener('click', () => {
+          const b = badge.dataset.badge;
+          if (selectedBadges.has(b)) selectedBadges.delete(b);
+          else selectedBadges.add(b);
+          updateBadges();
+        });
+      });
+
+      function updateBadges() {
+        document.querySelectorAll('.badge-opt').forEach(badge => {
+          badge.classList.toggle('selected', selectedBadges.has(badge.dataset.badge));
+        });
+      }
+
+      fCoverUrl.addEventListener('input', () => {
+        const url = fCoverUrl.value.trim();
+        if (url) coverPreview.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML='<span>Invalid URL</span>'">`;
+        else coverPreview.innerHTML = '<span>No cover</span>';
+      });
+
+      fCoverFile.addEventListener('change', () => {
+        const file = fCoverFile.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          coverPreview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover">`;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      document.getElementById('uploadCoverBtn').addEventListener('click', () => fCoverFile.click());
+
+      let titleLookupTimer = null;
+
+      fTitle.addEventListener('input', () => {
+        const q = fTitle.value.trim();
+        if (titleLookupTimer) clearTimeout(titleLookupTimer);
+        if (q.length < 3) {
+          autocompleteOptions = [];
+          if (bookSuggestions) bookSuggestions.innerHTML = '';
+          return;
+        }
+
+        titleLookupTimer = setTimeout(() => { lookupBooksByTitle(q); }, 380);
+      });
+
+      fTitle.addEventListener('change', () => { applySuggestionFromTitle(fTitle.value.trim()); });
+      fTitle.addEventListener('blur', () => { applySuggestionFromTitle(fTitle.value.trim(), true); });
+
+      async function lookupBooksByTitle(query) {
+        try {
+          const res = await fetch(`/api/book-search/?q=${encodeURIComponent(query)}`);
+          const data = await res.json();
+          autocompleteOptions = (data.results || []).slice(0, 8).map(item => ({
+            ...item,
+            label: `${item.title || ''}, ${item.author || 'Unknown author'}`,
+          }));
+
+          if (!bookSuggestions) return;
+          bookSuggestions.innerHTML = '';
+          autocompleteOptions.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item.label;
+            bookSuggestions.appendChild(opt);
+          });
+        } catch (_) {
+          autocompleteOptions = [];
+          if (bookSuggestions) bookSuggestions.innerHTML = '';
+        }
+      }
+
+      function applySuggestionFromTitle(rawValue, allowFirstFallback = false) {
+        if (!rawValue || !autocompleteOptions.length) return;
+        const normalized = rawValue.toLowerCase();
+        let match = autocompleteOptions.find(item => (item.label || '').toLowerCase() === normalized);
+        if (!match) match = autocompleteOptions.find(item => (item.title || '').toLowerCase() === normalized);
+        if (!match) match = autocompleteOptions.find(item => (item.title || '').toLowerCase().startsWith(normalized));
+        if (!match && allowFirstFallback) {
+          const first = autocompleteOptions[0];
+          const looksLikeAutocompletePick = first && first.title && first.title.toLowerCase().startsWith(normalized);
+          if (looksLikeAutocompletePick) match = first;
+        }
+        if (!match) return;
+        populateFromBookInfo(match, { force: true });
+        fTitle.value = match.title || fTitle.value;
+      }
+
+      function populateFromBookInfo(info, options = {}) {
+        const force = !!options.force;
+        if ((force || !fTitle.value) && info.title) fTitle.value = info.title;
+        if ((force || !fAuthor.value) && info.author) fAuthor.value = info.author;
+        if ((force || !fGenre.value) && info.genre) fGenre.value = info.genre;
+        if ((force || !fYear.value) && info.year) fYear.value = info.year;
+        if ((force || !fIsbn.value) && info.isbn) fIsbn.value = info.isbn;
+        if ((force || !fNotes.value) && info.description) { fNotes.value = info.description.slice(0, 800); }
+        if ((force || !fCoverUrl.value) && info.cover_url) {
+          fCoverUrl.value = info.cover_url;
+          coverPreview.innerHTML = `<img src="${info.cover_url}" style="width:100%;height:100%;object-fit:cover">`;
+        }
+      }
+
+      document.getElementById('fetchCoverBtn').addEventListener('click', async () => {
+        const title  = fTitle.value.trim();
+        const author = fAuthor.value.trim();
+        const isbn   = fIsbn.value.trim();
+
+        if (!title && !isbn) { notify('Enter a title or ISBN first.', 'error'); return; }
+
+        const btn = document.getElementById('fetchCoverBtn');
+        btn.textContent = '⏳ Fetching...';
+        btn.disabled = true;
+
+        try {
+          const params = new URLSearchParams();
+          if (isbn) params.set('isbn', isbn);
+          if (title) params.set('title', title);
+          if (author) params.set('author', author);
+
+          const res = await fetch(`/api/cover/?${params}`);
+          const data = await res.json();
+
+          if (data.cover_url) {
+            fCoverUrl.value = data.cover_url;
+            coverPreview.innerHTML = `<img src="${data.cover_url}" style="width:100%;height:100%;object-fit:cover">`;
+          } else {
+            btn.textContent = 'Not found';
+            setTimeout(() => { btn.textContent = '🔍 Auto-fetch'; }, 2000);
+          }
+        } catch (e) {
+          btn.textContent = 'Error';
+          notify('Cover lookup failed. Please try again.', 'error');
+        } finally {
+          btn.disabled = false;
+          if (btn.textContent === '⏳ Fetching...') btn.textContent = '🔍 Auto-fetch';
+        }
+      });
+
+      fIsbn.addEventListener('blur', async () => {
+        const isbn = fIsbn.value.trim();
+        if (!isbn || fTitle.value.trim()) return;
+        try {
+          const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1`);
+          const data = await res.json();
+          const item = (data.items || [])[0];
+          if (item) {
+            const info = item.volumeInfo;
+            const isbn13 = (info.industryIdentifiers || []).find(i => i.type === 'ISBN_13')?.identifier || '';
+            const isbn10 = (info.industryIdentifiers || []).find(i => i.type === 'ISBN_10')?.identifier || '';
+            populateFromBookInfo({
+              title: info.title || '',
+              author: (info.authors || []).join(', '),
+              genre: (info.categories || [])[0] || '',
+              year: (info.publishedDate || '').slice(0, 4),
+              isbn: (isbn13 || isbn10 || '').replace(/-/g, ''),
+              cover_url: info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http://', 'https://') : '',
+              description: info.description || '',
+            });
+          }
+        } catch (_) {}
+      });
+
+      document.getElementById('saveBookBtn').addEventListener('click', saveNode);
+
+      async function saveNode() {
+        const title = fTitle.value.trim();
+        if (!title) { fTitle.focus(); return; }
+        const isEditing = !!editingNode;
+
+        const payload = {
+          title,
+          author:     fAuthor.value.trim(),
+          genre:      fGenre.value.trim(),
+          year:       fYear.value ? parseInt(fYear.value) : null,
+          isbn:       fIsbn.value.trim(),
+          rating:     fRating.value ? parseFloat(fRating.value) : null,
+          cover_image: fCoverUrl.value.trim(),
+          parent:     fParent.value || null,
+          node_type:  selectedType,
+          notes:      fNotes.value.trim(),
+          badges:     Array.from(selectedBadges),
+          style: {
+            color:  fColor.value,
+            glow:   fGlow.value,
+            border: fBorder.value,
+            parent_edge: {
+              color: fParentEdgeColor ? fParentEdgeColor.value : '#d7b380',
+              line_style: fParentEdgeStyle ? fParentEdgeStyle.value : 'solid',
+              width: Number(fParentEdgeWidth ? fParentEdgeWidth.value : 3),
+            },
+          },
+        };
+
+        const saveBtn = document.getElementById('saveBookBtn');
+        saveBtn.textContent = 'Saving...';
+        saveBtn.disabled = true;
+
+        try {
+          let res;
+          if (editingNode) {
+            res = await fetch(`/api/nodes/${editingNode.id}/`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+              body: JSON.stringify(payload),
+            });
+          } else {
+            res = await fetch('/api/nodes/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+              body: JSON.stringify(payload),
+            });
+          }
+
+          if (!res.ok) {
+            const err = await res.json();
+            notify('Could not save node: ' + JSON.stringify(err), 'error');
+            return;
+          }
+
+          const savedNode = await res.json();
+          if (typeof window.upsertTreeNode === 'function') {
+            window.upsertTreeNode(savedNode);
+          } else if (typeof window.loadTree === 'function') {
+            await window.loadTree();
+          }
+          closeModal();
+          notify(isEditing ? 'Node updated instantly.' : 'Node created instantly.', 'success');
+        } catch (e) {
+          notify('Network error. Please try again.', 'error');
+        } finally {
+          saveBtn.textContent = 'Save Node';
+          saveBtn.disabled = false;
+        }
+      }
+
+      deleteBtn.addEventListener('click', async () => {
+        if (!editingNode) return;
+        const ok = typeof window.confirmAction === 'function'
+          ? await window.confirmAction(
+              `Delete "${editingNode.title}"? Child nodes will be unlinked from it.`,
+              'Delete node'
+            )
+          : confirm(`Delete "${editingNode.title}"? Child nodes will be unlinked.`);
+        if (!ok) return;
+        try {
+          const res = await fetch(`/api/nodes/${editingNode.id}/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCsrf() },
+          });
+          if (!res.ok) { notify('Failed to delete node.', 'error'); return; }
+          if (typeof window.removeTreeNode === 'function') {
+            window.removeTreeNode(editingNode.id);
+          } else if (typeof window.loadTree === 'function') {
+            await window.loadTree();
+          }
+          closeModal();
+          notify('Node deleted.', 'success');
+        } catch (e) { notify('Failed to delete node.', 'error'); }
+      });
+
+      document.getElementById('closeBookModal').addEventListener('click', closeModal);
+      document.getElementById('cancelBookModal').addEventListener('click', closeModal);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+      document.getElementById('addBookBtn')?.addEventListener('click', () => openAddModal());
+      document.getElementById('addNodeBtn')?.addEventListener('click', () => openAddModal());
+      document.getElementById('floatAddBook')?.addEventListener('click', () => openAddModal());
+      document.getElementById('emptyAddBtn')?.addEventListener('click', () => openAddModal());
+
+      setTimeout(() => { document.getElementById('floatBar')?.classList.add('visible'); }, 3000);
+
+      function getCsrf() {
+        const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+        return cookie ? cookie.split('=')[1] : '';
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeModal();
+          document.getElementById('sidebar').classList.remove('open');
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault();
+          document.getElementById('searchInput').focus();
+        }
+      });
+
+      document.getElementById('scrollTopBtn').addEventListener('click', () => {
+        window.fitTree && window.fitTree();
+      });
+    })();
+  </script>
+</body>
+</html>

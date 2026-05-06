@@ -1,5 +1,8 @@
 import requests
 import logging
+from django.contrib.auth.models import User
+from django.db import IntegrityError
+from django.db.models import Q, Count
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -10,11 +13,11 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
-from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Node, Edge
+from .models import Node, Edge, FriendRequest, Friendship, CommunityPost
 from .serializers import NodeSerializer, EdgeSerializer
 
 
@@ -84,15 +87,237 @@ def logout_view(request):
     return redirect('/login/?logged_out=1')
 
 
+def _get_friend_ids(user):
+    pairs = Friendship.objects.filter(Q(user_a=user) | Q(user_b=user)).values_list('user_a_id', 'user_b_id')
+    friend_ids = set()
+    for user_a_id, user_b_id in pairs:
+        friend_ids.add(user_b_id if user_a_id == user.id else user_a_id)
+    return friend_ids
+
+
+def _get_display_name(user):
+    profile = getattr(user, 'profile', None)
+    if profile and profile.display_name:
+        return profile.display_name
+    return user.username
+
+
+# ──────────────────────────────────────────────
+# Community pages
+# ──────────────────────────────────────────────
+
+@login_required
+def community_feed(request):
+    friend_ids = _get_friend_ids(request.user)
+    posts = CommunityPost.objects.select_related('user').filter(
+        Q(visibility=CommunityPost.VISIBILITY_PUBLIC)
+        | Q(user=request.user)
+        | Q(visibility=CommunityPost.VISIBILITY_FRIENDS, user_id__in=friend_ids)
+    )
+
+    return render(request, 'community_feed.html', {
+        'posts': posts,
+    })
+
+
+@login_required
+def community_my_posts(request):
+    posts = CommunityPost.objects.filter(user=request.user).order_by('-created_at')
+    return render(request, 'community_my_posts.html', {
+        'posts': posts,
+    })
+
+
+@login_required
+def community_create_post(request):
+    errors = []
+    payload = {
+        'title': '',
+        'content': '',
+        'progress_status': '',
+        'visibility': CommunityPost.VISIBILITY_PUBLIC,
+    }
+
+    if request.method == 'POST':
+        payload['title'] = (request.POST.get('title') or '').strip()
+        payload['content'] = (request.POST.get('content') or '').strip()
+        payload['progress_status'] = (request.POST.get('progress_status') or '').strip()
+        payload['visibility'] = (request.POST.get('visibility') or CommunityPost.VISIBILITY_PUBLIC).strip()
+
+        if not payload['title']:
+            errors.append('Please add a title for your update.')
+        if not payload['content']:
+            errors.append('Please add some content for your update.')
+
+        if not errors:
+            CommunityPost.objects.create(
+                user=request.user,
+                title=payload['title'],
+                content=payload['content'],
+                progress_status=payload['progress_status'],
+                visibility=payload['visibility'],
+            )
+            return redirect('tree:community-feed')
+
+    return render(request, 'community_create_post.html', {
+        'errors': errors,
+        'form': payload,
+        'status_choices': CommunityPost.STATUS_CHOICES,
+        'visibility_choices': CommunityPost.VISIBILITY_CHOICES,
+    })
+
+
+@login_required
+def community_people(request):
+    query = (request.GET.get('q') or '').strip()
+    users = User.objects.exclude(id=request.user.id)
+    if query:
+        users = users.filter(username__icontains=query)
+    users = users.order_by('username')
+
+    friend_ids = _get_friend_ids(request.user)
+    outgoing_ids = set(
+        FriendRequest.objects.filter(
+            from_user=request.user,
+            status=FriendRequest.STATUS_PENDING,
+        ).values_list('to_user_id', flat=True)
+    )
+    incoming_ids = set(
+        FriendRequest.objects.filter(
+            to_user=request.user,
+            status=FriendRequest.STATUS_PENDING,
+        ).values_list('from_user_id', flat=True)
+    )
+
+    people = []
+    for user in users:
+        if user.id in friend_ids:
+            status_label = 'friend'
+        elif user.id in outgoing_ids:
+            status_label = 'outgoing'
+        elif user.id in incoming_ids:
+            status_label = 'incoming'
+        else:
+            status_label = 'none'
+
+        people.append({
+            'user': user,
+            'display_name': _get_display_name(user),
+            'status': status_label,
+        })
+
+    return render(request, 'community_people.html', {
+        'people': people,
+        'query': query,
+    })
+
+
+@login_required
+def community_requests(request):
+    incoming = FriendRequest.objects.filter(
+        to_user=request.user,
+        status=FriendRequest.STATUS_PENDING,
+    ).select_related('from_user')
+    outgoing = FriendRequest.objects.filter(
+        from_user=request.user,
+        status=FriendRequest.STATUS_PENDING,
+    ).select_related('to_user')
+
+    return render(request, 'community_requests.html', {
+        'incoming': incoming,
+        'outgoing': outgoing,
+    })
+
+
+@login_required
+def community_friends(request):
+    friend_ids = _get_friend_ids(request.user)
+    friends = User.objects.filter(id__in=friend_ids).order_by('username')
+    friend_cards = [
+        {
+            'user': friend,
+            'display_name': _get_display_name(friend),
+        }
+        for friend in friends
+    ]
+    return render(request, 'community_friends.html', {
+        'friends': friend_cards,
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def send_friend_request(request, user_id):
+    to_user = get_object_or_404(User, pk=user_id)
+    if to_user.id == request.user.id:
+        return redirect('tree:community-people')
+
+    friend_exists = Friendship.objects.filter(
+        Q(user_a=request.user, user_b=to_user) | Q(user_a=to_user, user_b=request.user)
+    ).exists()
+    if friend_exists:
+        return redirect('tree:community-people')
+
+    try:
+        FriendRequest.objects.create(from_user=request.user, to_user=to_user)
+    except IntegrityError:
+        pass
+
+    return redirect('tree:community-people')
+
+
+@login_required
+@require_http_methods(['POST'])
+def accept_friend_request(request, request_id):
+    friend_request = get_object_or_404(
+        FriendRequest,
+        id=request_id,
+        to_user=request.user,
+        status=FriendRequest.STATUS_PENDING,
+    )
+
+    friend_request.status = FriendRequest.STATUS_ACCEPTED
+    friend_request.save(update_fields=['status', 'updated_at'])
+
+    try:
+        Friendship.objects.create(user_a=friend_request.from_user, user_b=friend_request.to_user)
+    except IntegrityError:
+        pass
+
+    return redirect('tree:community-requests')
+
+
+@login_required
+@require_http_methods(['POST'])
+def reject_friend_request(request, request_id):
+    friend_request = get_object_or_404(
+        FriendRequest,
+        id=request_id,
+        to_user=request.user,
+        status=FriendRequest.STATUS_PENDING,
+    )
+
+    friend_request.status = FriendRequest.STATUS_REJECTED
+    friend_request.save(update_fields=['status', 'updated_at'])
+
+    return redirect('tree:community-requests')
+
+
 # ──────────────────────────────────────────────
 # Tree data – full snapshot
 # ──────────────────────────────────────────────
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def tree_data(request):
     """Return all nodes + edges for the frontend to render."""
-    nodes = Node.objects.all()
-    edges = Edge.objects.select_related('source', 'target').all()
+    cache_key = f'tree-data:v1:user:{request.user.id}'
+    cached = cache.get(cache_key)
+    if cached:
+        return Response(cached)
+
+    nodes = Node.objects.filter(user=request.user).annotate(children_count=Count('children'))
+    edges = Edge.objects.select_related('source', 'target').filter(user=request.user)
 
     node_data = NodeSerializer(nodes, many=True, context={'request': request}).data
 
@@ -112,7 +337,9 @@ def tree_data(request):
     for edge in edges:
         edge_data.append(EdgeSerializer(edge).data)
 
-    return Response({'nodes': node_data, 'edges': edge_data})
+    payload = {'nodes': node_data, 'edges': edge_data}
+    cache.set(cache_key, payload, timeout=60)
+    return Response(payload)
 
 
 # ──────────────────────────────────────────────
@@ -120,16 +347,16 @@ def tree_data(request):
 # ──────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticatedOrReadOnly])
+@permission_classes([IsAuthenticated])
 def node_list(request):
     if request.method == 'GET':
-        nodes = Node.objects.all()
+        nodes = Node.objects.filter(user=request.user).annotate(children_count=Count('children'))
         serializer = NodeSerializer(nodes, many=True, context={'request': request})
         return Response(serializer.data)
 
     serializer = NodeSerializer(data=request.data)
     if serializer.is_valid():
-        node = serializer.save()
+        node = serializer.save(user=request.user)
         # Auto-fetch cover if not supplied
         if not node.cover_image and node.isbn:
             node.cover_image = _fetch_cover_open_library(node.isbn)
@@ -137,15 +364,21 @@ def node_list(request):
         elif not node.cover_image and node.title:
             node.cover_image = _fetch_cover_google(node.title, node.author)
             node.save(update_fields=['cover_image'])
-        return Response(NodeSerializer(node, context={'request': request}).data,
-                        status=status.HTTP_201_CREATED)
+        _invalidate_tree_cache(request.user.id)
+        return Response(
+            NodeSerializer(node, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
-@permission_classes([IsAuthenticatedOrReadOnly])
+@permission_classes([IsAuthenticated])
 def node_detail(request, pk):
-    node = get_object_or_404(Node, pk=pk)
+    node = get_object_or_404(
+        Node.objects.annotate(children_count=Count('children')).filter(user=request.user),
+        pk=pk,
+    )
 
     if request.method == 'GET':
         return Response(NodeSerializer(node, context={'request': request}).data)
@@ -156,18 +389,20 @@ def node_detail(request, pk):
                                     context={'request': request})
         if serializer.is_valid():
             serializer.save()
+            _invalidate_tree_cache(request.user.id)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     node.delete()
+    _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticatedOrReadOnly])
+@permission_classes([IsAuthenticated])
 def edge_list(request):
     if request.method == 'GET':
-        edges = Edge.objects.all()
+        edges = Edge.objects.filter(user=request.user)
         serializer = EdgeSerializer(edges, many=True)
         return Response(serializer.data)
 
@@ -177,38 +412,56 @@ def edge_list(request):
         target = serializer.validated_data['target']
         edge_type = serializer.validated_data.get('edge_type', 'custom')
 
+        if source.user_id != request.user.id or target.user_id != request.user.id:
+            return Response(
+                {'detail': 'Source and target must belong to the current user.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if source.id == target.id:
             return Response(
                 {'detail': 'Source and target must be different nodes.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if Edge.objects.filter(source=source, target=target, edge_type=edge_type).exists():
+        if Edge.objects.filter(
+            user=request.user,
+            source=source,
+            target=target,
+            edge_type=edge_type,
+        ).exists():
             return Response(
                 {'detail': 'This connection already exists.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        edge = serializer.save()
+        edge = serializer.save(user=request.user)
+        _invalidate_tree_cache(request.user.id)
         return Response(EdgeSerializer(edge).data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['PATCH', 'DELETE'])
-@permission_classes([IsAuthenticatedOrReadOnly])
+@permission_classes([IsAuthenticated])
 def edge_detail(request, pk):
-    edge = get_object_or_404(Edge, pk=pk)
+    edge = get_object_or_404(Edge.objects.filter(user=request.user), pk=pk)
 
     if request.method == 'PATCH':
         serializer = EdgeSerializer(edge, data=request.data, partial=True)
         if serializer.is_valid():
             saved = serializer.save()
+            _invalidate_tree_cache(request.user.id)
             return Response(EdgeSerializer(saved).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     edge.delete()
+    _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _invalidate_tree_cache(user_id):
+    cache.delete(f'tree-data:v1:user:{user_id}')
 
 
 # ──────────────────────────────────────────────

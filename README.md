@@ -9,6 +9,7 @@ Interactive Django app for organizing books as a visual reading tree.
 - Add/edit/delete nodes from the UI
 - Automatic cover lookup (ISBN/title)
 - SQLite database for local development
+- Community feature: posts + friend requests
 
 ## Tech stack
 
@@ -54,6 +55,13 @@ pip install -r requirements.txt
 python manage.py migrate
 ```
 
+If you are adding the community feature for the first time, run:
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
 ### 5. (Optional) Load sample data
 
 ```bash
@@ -87,6 +95,41 @@ Open:
 - Static source files: static/
 - Templates: templates/
 - App code: tree/
+
+## Community pages
+
+- Community feed: http://127.0.0.1:8000/community/
+- Create post: http://127.0.0.1:8000/community/new/
+- Find people: http://127.0.0.1:8000/community/people/
+- Requests: http://127.0.0.1:8000/community/requests/
+- Friends: http://127.0.0.1:8000/community/friends/
+- My posts: http://127.0.0.1:8000/community/my-posts/
+
+## Environment variables
+
+- `SECRET_KEY` (required in production)
+- `DEBUG` (default: `true`)
+- `ALLOWED_HOSTS` (comma-separated, e.g. `readwoods.onrender.com`)
+- `DATABASE_URL` (PostgreSQL connection string for Render)
+- `DB_SSL` (default: `true` for PostgreSQL)
+- `CORS_ALLOW_ALL_ORIGINS` (default: `true`)
+
+## Render / PostgreSQL notes
+
+1. Provision a PostgreSQL database on Render.
+2. Set `DATABASE_URL` in the Render service environment to the database URL.
+3. Set `SECRET_KEY`, `DEBUG=false`, and `ALLOWED_HOSTS` to your Render host.
+4. Run migrations on deploy:
+
+```bash
+python manage.py migrate
+```
+
+5. Collect static files if your Render setup expects them:
+
+```bash
+python manage.py collectstatic
+```
 
 ## Troubleshooting
 
