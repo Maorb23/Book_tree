@@ -9,14 +9,49 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-book-tree-dev-key-change-in-production')
 
+
+def _csv_env(name, default=''):
+    return [item.strip() for item in os.getenv(name, default).split(',') if item.strip()]
+
+
+def _normalize_csrf_origin(value):
+    origin = value.strip().rstrip('/')
+    if not origin:
+        return ''
+    if origin.startswith('.'):
+        origin = f'*.{origin.lstrip(".")}'
+    if not origin.startswith(('http://', 'https://')):
+        origin = f'https://{origin}'
+    return origin
+
+
 DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
-if not DEBUG:
-    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+
+railway_public_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').strip()
 
 if os.getenv('ALLOWED_HOSTS'):
-    ALLOWED_HOSTS = [host.strip() for host in os.getenv('ALLOWED_HOSTS', '').split(',') if host.strip()]
+    ALLOWED_HOSTS = _csv_env('ALLOWED_HOSTS')
 else:
     ALLOWED_HOSTS = ['*']
+if railway_public_domain and railway_public_domain not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(railway_public_domain)
+
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in (
+        _normalize_csrf_origin(value)
+        for value in _csv_env('CSRF_TRUSTED_ORIGINS')
+    )
+    if origin
+]
+if railway_public_domain:
+    railway_origin = _normalize_csrf_origin(railway_public_domain)
+    if railway_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(railway_origin)
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
 
 INSTALLED_APPS = [
     'django.contrib.admin',
