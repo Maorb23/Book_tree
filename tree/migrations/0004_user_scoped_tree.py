@@ -11,7 +11,7 @@ def assign_user_to_tree(apps, schema_editor):
     user = User.objects.order_by('id').first()
     if not user:
         user = User.objects.create(username='legacy')
-        user.set_unusable_password()
+        user.password = '!'
         user.save(update_fields=['password'])
 
     Node.objects.filter(user__isnull=True).update(user=user)

@@ -6,6 +6,19 @@ import uuid
 
 
 class Node(models.Model):
+    SHELF_ALL = "all"
+    SHELF_WANT_TO_READ = "want_to_read"
+    SHELF_CURRENTLY_READING = "currently_reading"
+    SHELF_READ = "read"
+    SHELF_DID_NOT_FINISH = "did_not_finish"
+    SHELF_CHOICES = [
+        (SHELF_ALL, "All"),
+        (SHELF_WANT_TO_READ, "Want to Read"),
+        (SHELF_CURRENTLY_READING, "Currently Reading"),
+        (SHELF_READ, "Read"),
+        (SHELF_DID_NOT_FINISH, "Did Not Finish"),
+    ]
+
     NODE_TYPES = [
         ("book", "Book"),
         ("author", "Author"),
@@ -47,6 +60,8 @@ class Node(models.Model):
 
     date_added = models.DateTimeField(auto_now_add=True)
     date_read = models.DateField(null=True, blank=True)
+    shelf = models.CharField(max_length=32, choices=SHELF_CHOICES, default=SHELF_WANT_TO_READ)
+    custom_shelf = models.CharField(max_length=80, blank=True)
 
     badges = models.JSONField(default=list, blank=True)
     notes = models.TextField(blank=True)
@@ -54,7 +69,7 @@ class Node(models.Model):
     class Meta:
         ordering = ['date_added']
         indexes = [
-            models.Index(fields=['user', 'date_added']),
+            models.Index(fields=['user', 'date_added'], name='tree_node_user_date_idx'),
         ]
 
     def __str__(self):
@@ -90,7 +105,7 @@ class Edge(models.Model):
     class Meta:
         unique_together = ('user', 'source', 'target', 'edge_type')
         indexes = [
-            models.Index(fields=['user', 'edge_type']),
+            models.Index(fields=['user', 'edge_type'], name='tree_edge_user_type_idx'),
         ]
 
     def __str__(self):

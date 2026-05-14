@@ -24,6 +24,7 @@
       <a href="#community">Community</a>
     {% endif %}
     {% if request.user.is_authenticated %}
+      <a href="{% url 'tree:my-books' %}">My Books</a>
       <a href="{% url 'tree:tree' %}" class="nav__cta">My Tree</a>
       <a href="{% url 'tree:logout' %}">Logout</a>
     {% else %}
@@ -64,7 +65,7 @@
     <h2 class="section-title">Colorful picks from the community</h2>
     <div class="book-strip" aria-label="Recommended books">
       {% for rec in recommended_books %}
-      <a class="book-link" href="{% url 'tree:book' %}?title={{ rec.title|urlencode }}{% if rec.author %}&author={{ rec.author|urlencode }}{% endif %}{% if rec.isbn %}&isbn={{ rec.isbn|urlencode }}{% endif %}" aria-label="Open {{ rec.title }} details">
+      <a class="book-link" href="{% url 'tree:book' %}?title={{ rec.title|urlencode }}{% if rec.author %}&author={{ rec.author|urlencode }}{% endif %}{% if rec.isbn %}&isbn={{ rec.isbn|urlencode }}{% endif %}{% if rec.genre %}&genre={{ rec.genre|urlencode }}{% endif %}{% if rec.year %}&year={{ rec.year|urlencode }}{% endif %}{% if rec.cover_url %}&cover={{ rec.cover_url|urlencode }}{% endif %}{% if rec.description %}&description={{ rec.description|urlencode }}{% endif %}" aria-label="Open {{ rec.title }} details">
         <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
           <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
           <h3>{{ rec.title }}</h3>
@@ -99,33 +100,24 @@
 
 <section class="features" id="features">
   <div class="features__inner">
-    <p class="section-kicker">Why People Share Here</p>
-    <h2 class="section-title">Built for social reading and recommendations</h2>
-    <div class="features__grid">
-      <article class="feature-card feature-card--cyan">
-        <h3>Visual Reading Identity</h3>
-        <p>Show your reading taste as a tree, not just a list. Friends can see your growth and favorite genres instantly.</p>
-      </article>
-      <article class="feature-card feature-card--lime">
-        <h3>Recommendation Highlights</h3>
-        <p>Pin standout books in colorful cards so people know exactly what to read next from your tree.</p>
-      </article>
-      <article class="feature-card feature-card--amber">
-        <h3>Follow Friends' Trees</h3>
-        <p>Track what your circle reads, discover new branches, and build a smarter reading feed together.</p>
-      </article>
-      <article class="feature-card feature-card--violet">
-        <h3>One Click Sharing</h3>
-        <p>Share your tree snapshot as a profile-worthy visual and invite others into your reading network.</p>
-      </article>
-      <article class="feature-card feature-card--red">
-        <h3>Review + React Culture</h3>
-        <p>Leave short takes, react to books, and turn recommendations into ongoing conversations.</p>
-      </article>
-      <article class="feature-card feature-card--blue">
-        <h3>Always Expanding</h3>
-        <p>As you read more, your tree gets richer, your profile gets stronger, and your recommendations get better.</p>
-      </article>
+    <p class="section-kicker">Reading Desk</p>
+    <h2 class="section-title">Articles and videos worth opening next</h2>
+    <div class="content-scroll" aria-label="Book articles and videos">
+      {% for item in reading_content %}
+      <a class="content-card" href="{{ item.url }}" target="_blank" rel="noopener">
+        <span class="content-card__media">
+          {% if item.image_url %}
+            <img src="{{ item.image_url }}" alt="" loading="lazy" decoding="async">
+          {% endif %}
+          <span class="content-card__type">{{ item.type }}</span>
+        </span>
+        <span class="content-card__body">
+          <span class="content-card__source">{{ item.source }}</span>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.summary }}</p>
+        </span>
+      </a>
+      {% endfor %}
     </div>
   </div>
 </section>

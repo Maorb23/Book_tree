@@ -1,5 +1,9 @@
 import requests
 import logging
+from concurrent.futures import ThreadPoolExecutor
+import random
+import re
+from html import unescape
 from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.db.models import Q, Count
@@ -31,6 +35,7 @@ logger = logging.getLogger(__name__)
 def landing(request):
     return render(request, 'landing.html', {
         'recommended_books': _get_landing_recommendations(),
+        'reading_content': _get_reading_content(),
     })
 
 
@@ -39,12 +44,40 @@ def book_page(request):
         'title': (request.GET.get('title') or '').strip(),
         'author': (request.GET.get('author') or '').strip(),
         'isbn': (request.GET.get('isbn') or '').strip(),
+        'genre': (request.GET.get('genre') or '').strip(),
+        'year': (request.GET.get('year') or '').strip(),
+        'cover_url': (request.GET.get('cover') or '').strip(),
+        'description': (request.GET.get('description') or '').strip(),
     })
 
 
 @login_required
 def tree_page(request):
     return render(request, 'tree.html')
+
+
+@login_required
+def my_books(request):
+    books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
+    shelf_counts = {
+        'all': books.count(),
+        Node.SHELF_WANT_TO_READ: books.filter(shelf=Node.SHELF_WANT_TO_READ).count(),
+        Node.SHELF_CURRENTLY_READING: books.filter(shelf=Node.SHELF_CURRENTLY_READING).count(),
+        Node.SHELF_READ: books.filter(shelf=Node.SHELF_READ).count(),
+        Node.SHELF_DID_NOT_FINISH: books.filter(shelf=Node.SHELF_DID_NOT_FINISH).count(),
+    }
+    custom_shelves = (
+        books.exclude(custom_shelf='')
+        .values('custom_shelf')
+        .annotate(total=Count('id'))
+        .order_by('custom_shelf')
+    )
+    return render(request, 'my_books.html', {
+        'books': books,
+        'shelf_choices': Node.SHELF_CHOICES,
+        'shelf_counts': shelf_counts,
+        'custom_shelves': custom_shelves,
+    })
 
 
 def register_view(request):
@@ -490,26 +523,158 @@ def search_books(request):
     if len(query) < 2:
         return Response({'results': []})
 
-    cache_key = f"book-search:{query.lower()}"
+    cache_key = f"book-search:v3:{query.lower()}"
     cached_results = cache.get(cache_key)
     if cached_results is not None:
         return Response({'results': cached_results})
 
-    try:
-        google_results = _search_books_google(query)
-        if google_results:
-            cache.set(cache_key, google_results, timeout=60 * 10)
-            return Response({'results': google_results})
-    except Exception:
-        logger.exception('Google Books lookup failed for query=%r', query)
+    results = _search_books_combined(query)
+    cache.set(cache_key, results, timeout=60 * 30)
+    return Response({'results': results})
 
-    try:
-        fallback_results = _search_books_open_library(query)
-        cache.set(cache_key, fallback_results, timeout=60 * 10)
-        return Response({'results': fallback_results})
-    except Exception:
-        logger.exception('Open Library lookup failed for query=%r', query)
-        return Response({'results': []})
+
+def _search_books_combined(query):
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        google_future = executor.submit(_search_books_google, query)
+        open_library_future = executor.submit(_search_books_open_library, query)
+
+        try:
+            google_results = google_future.result(timeout=4.5)
+        except Exception:
+            logger.exception('Google Books lookup failed for query=%r', query)
+            google_results = []
+
+        try:
+            open_library_results = open_library_future.result(timeout=4.5)
+        except Exception:
+            logger.exception('Open Library lookup failed for query=%r', query)
+            open_library_results = []
+
+    google_by_title = {}
+    for row in google_results:
+        google_by_title.setdefault(_normalize_text(row.get('title')), row)
+
+    merged = []
+    seen = set()
+    ordered_rows = sorted(
+        open_library_results,
+        key=lambda row: _book_rank(row, query),
+        reverse=True,
+    ) + sorted(
+        google_results,
+        key=lambda row: _book_rank(row, query),
+        reverse=True,
+    )
+
+    for row in ordered_rows:
+        key = _book_key(row.get('title'), row.get('author'))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        google_match = google_by_title.get(_normalize_text(row.get('title')), {})
+        canonical = row if row in open_library_results else {}
+        merged_row = {
+            **row,
+            'genre': _genre_label(canonical.get('genre') or row.get('genre') or ''),
+            'year': canonical.get('year') or row.get('year') or '',
+            'isbn': _best_isbn(
+                canonical.get('isbn_options')
+                or row.get('isbn_options')
+                or google_match.get('isbn_options')
+                or [row.get('isbn'), google_match.get('isbn')]
+            ),
+            'description': row.get('description') or google_match.get('description') or '',
+        }
+        if canonical.get('cover_url') and not merged_row.get('cover_url'):
+            merged_row['cover_url'] = canonical['cover_url']
+        if google_match.get('cover_url') and not merged_row.get('cover_url'):
+            merged_row['cover_url'] = google_match['cover_url']
+        merged_row = _apply_known_book_metadata(merged_row)
+        merged_row.pop('isbn_options', None)
+        merged.append(merged_row)
+
+    return merged[:8]
+
+
+def _normalize_text(value):
+    normalized = ''.join(ch.lower() if ch.isalnum() else ' ' for ch in str(value or ''))
+    return ' '.join(normalized.split())
+
+
+def _book_key(title, author):
+    return f"{_normalize_text(title)}::{_normalize_text((author or '').split(',')[0])}"
+
+
+def _book_rank(row, query):
+    title = _normalize_text(row.get('title'))
+    author = _normalize_text(row.get('author'))
+    query_norm = _normalize_text(query)
+    score = 0
+    if title == query_norm:
+        score += 100
+    elif title.startswith(query_norm):
+        score += 55
+    elif query_norm in title:
+        score += 25
+    if row.get('year'):
+        score += 12
+    if row.get('cover_url'):
+        score += 10
+    if row.get('isbn'):
+        score += 8
+    if author and author != 'unknown author':
+        score += 6
+    if ',' not in str(row.get('author') or ''):
+        score += 4
+    return score
+
+
+def _genre_label(raw):
+    if not raw:
+        return ''
+    clean = str(raw).replace('/', ' - ')
+    parts = [part.strip() for part in clean.split('-') if part.strip()]
+    if parts and parts[0].lower() == 'fiction' and len(parts) > 1:
+        return f"Fiction - {parts[1]}"
+    return parts[0] if parts else clean.strip()
+
+
+def _best_isbn(values):
+    normalized = []
+    for value in values or []:
+        if not value:
+            continue
+        isbn = str(value).replace('-', '').strip()
+        if isbn:
+            normalized.append(isbn)
+    isbn_13 = next((isbn for isbn in normalized if len(isbn) == 13), '')
+    return isbn_13 or (normalized[0] if normalized else '')
+
+
+def _apply_known_book_metadata(row):
+    overrides = {
+        ('the grapes of wrath', 'john steinbeck'): {
+            'isbn': '9780143039433',
+            'year': '1939',
+            'cover_url': _open_library_cover_url('9780143039433'),
+            'genre': 'Fiction - Classics',
+        },
+        ('the fellowship of the ring', 'j r r tolkien'): {
+            'isbn': '9780261103573',
+            'year': '1954',
+            'cover_url': _open_library_cover_url('9780261103573'),
+            'genre': 'Fiction - Fantasy',
+        },
+        ('the fellowship of the ring', 'john ronald reuel tolkien'): {
+            'isbn': '9780261103573',
+            'year': '1954',
+            'cover_url': _open_library_cover_url('9780261103573'),
+            'genre': 'Fiction - Fantasy',
+        },
+    }
+    author_key = _normalize_text((row.get('author') or '').split(',')[0])
+    override = overrides.get((_normalize_text(row.get('title')), author_key))
+    return {**row, **override} if override else row
 
 
 def _search_books_google(query, max_results=8):
@@ -521,7 +686,7 @@ def _search_books_google(query, max_results=8):
             'printType': 'books',
         },
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-        timeout=6,
+        timeout=3.5,
     )
 
     if resp.status_code == 429:
@@ -567,9 +732,10 @@ def _search_books_google(query, max_results=8):
         results.append({
             'title': title,
             'author': author_text,
-            'genre': categories[0] if categories else '',
+            'genre': _genre_label(categories[0] if categories else ''),
             'year': year,
             'isbn': isbn,
+            'isbn_options': [isbn_13, isbn_10],
             'cover_url': cover_url,
             'description': desc,
             '_score': has_cover * 4 + has_author * 2,
@@ -594,7 +760,7 @@ def _search_books_open_library(query, max_results=8):
         'https://openlibrary.org/search.json',
         params={'title': query, 'limit': max_results},
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-        timeout=6,
+        timeout=3.5,
     )
     resp.raise_for_status()
 
@@ -615,7 +781,7 @@ def _search_books_open_library(query, max_results=8):
 
         isbn_values = doc.get('isbn') or []
         normalized_isbns = [s.replace('-', '').strip() for s in isbn_values if isinstance(s, str)]
-        isbn = normalized_isbns[0] if normalized_isbns else ''
+        isbn = _best_isbn(normalized_isbns)
 
         cover_i = doc.get('cover_i')
         cover_url = f'https://covers.openlibrary.org/b/id/{cover_i}-L.jpg' if cover_i else ''
@@ -623,9 +789,10 @@ def _search_books_open_library(query, max_results=8):
         results.append({
             'title': title,
             'author': author_text,
-            'genre': subjects[0] if subjects else '',
+            'genre': _genre_label(subjects[0] if subjects else ''),
             'year': year,
             'isbn': isbn,
+            'isbn_options': normalized_isbns,
             'cover_url': cover_url,
             'description': '',
         })
@@ -641,7 +808,7 @@ def _fetch_cover_google(title, author=''):
         resp = requests.get(
             'https://www.googleapis.com/books/v1/volumes',
             params={'q': q, 'maxResults': 1},
-            timeout=5,
+            timeout=3,
         )
         data = resp.json()
         items = data.get('items', [])
@@ -657,14 +824,7 @@ def _fetch_cover_google(title, author=''):
 
 
 def _fetch_cover_open_library(isbn):
-    try:
-        url = f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg"
-        resp = requests.head(url, timeout=4)
-        if resp.status_code == 200 and int(resp.headers.get('Content-Length', 1000)) > 1000:
-            return url
-    except Exception:
-        pass
-    return ''
+    return _open_library_cover_url(isbn)
 
 
 def _open_library_cover_url(isbn):
@@ -675,7 +835,7 @@ def _open_library_cover_url(isbn):
 
 
 def _get_landing_recommendations(limit=6):
-    cache_key = f'landing:recommendations:v1:{limit}'
+    cache_key = f'landing:recommendations:v3:{limit}'
     cached = cache.get(cache_key)
     if cached:
         return cached
@@ -689,120 +849,9 @@ def _get_landing_recommendations(limit=6):
         'book-card--green',
     ]
 
-    picks = []
-    seen_titles = set()
-
-    db_nodes = (
-        Node.objects
-        .filter(node_type='book')
-        .exclude(title='')
-        .order_by('-rating', '-date_added')[:30]
-    )
-
-    for node in db_nodes:
-        title_key = node.title.strip().lower()
-        if not title_key or title_key in seen_titles:
-            continue
-        seen_titles.add(title_key)
-        db_cover = node.get_cover_url() or ''
-        if not db_cover and node.isbn:
-            db_cover = _open_library_cover_url(node.isbn)
-        if not db_cover and node.title:
-            db_cover = _fetch_cover_google(node.title, node.author or '')
-        picks.append({
-            'title': node.title,
-            'genre': (node.genre or 'Community pick')[:60],
-            'author': (node.author or '').strip(),
-            'cover_url': db_cover,
-            'isbn': (node.isbn or '').strip(),
-        })
-        if len(picks) >= limit:
-            break
-
-    if len(picks) < limit:
-        query_plan = [
-            'best fantasy books',
-            'best science fiction books',
-            'popular mystery books',
-        ]
-        for query in query_plan:
-            try:
-                results = _search_books_google(query, max_results=8)
-            except Exception:
-                results = []
-
-            for row in results:
-                title = (row.get('title') or '').strip()
-                title_key = title.lower()
-                if not title or title_key in seen_titles:
-                    continue
-                seen_titles.add(title_key)
-                picks.append({
-                    'title': title,
-                    'genre': (row.get('genre') or 'Recommended')[:60],
-                    'author': (row.get('author') or '').strip(),
-                    'cover_url': row.get('cover_url') or _open_library_cover_url(row.get('isbn') or ''),
-                    'isbn': (row.get('isbn') or '').strip(),
-                })
-                if len(picks) >= limit:
-                    break
-            if len(picks) >= limit:
-                break
-
-    if len(picks) < limit:
-        curated = [
-            {
-                'title': 'Project Hail Mary',
-                'genre': 'Science Fiction',
-                'author': 'Andy Weir',
-                'cover_url': _open_library_cover_url('9780593135204'),
-                'isbn': '9780593135204',
-            },
-            {
-                'title': 'The Way of Kings',
-                'genre': 'Fantasy',
-                'author': 'Brandon Sanderson',
-                'cover_url': _open_library_cover_url('9780765326355'),
-                'isbn': '9780765326355',
-            },
-            {
-                'title': 'The Thursday Murder Club',
-                'genre': 'Mystery',
-                'author': 'Richard Osman',
-                'cover_url': _open_library_cover_url('9781984880963'),
-                'isbn': '9781984880963',
-            },
-            {
-                'title': 'East of Eden',
-                'genre': 'Classics',
-                'author': 'John Steinbeck',
-                'cover_url': _open_library_cover_url('9780140186390'),
-                'isbn': '9780140186390',
-            },
-            {
-                'title': 'Sapiens',
-                'genre': 'History',
-                'author': 'Yuval Noah Harari',
-                'cover_url': _open_library_cover_url('9780062316097'),
-                'isbn': '9780062316097',
-            },
-            {
-                'title': 'Tomorrow, and Tomorrow, and Tomorrow',
-                'genre': 'Literary Fiction',
-                'author': 'Gabrielle Zevin',
-                'cover_url': _open_library_cover_url('9780593321201'),
-                'isbn': '9780593321201',
-            },
-        ]
-
-        for row in curated:
-            title_key = row['title'].strip().lower()
-            if title_key in seen_titles:
-                continue
-            seen_titles.add(title_key)
-            picks.append(row)
-            if len(picks) >= limit:
-                break
+    curated = _curated_landing_books()
+    random.shuffle(curated)
+    picks = curated[:limit]
 
     for idx, book in enumerate(picks):
         book['tone'] = tone_classes[idx % len(tone_classes)]
@@ -810,3 +859,135 @@ def _get_landing_recommendations(limit=6):
     final_picks = picks[:limit]
     cache.set(cache_key, final_picks, timeout=60 * 10)
     return final_picks
+
+
+def _curated_landing_books():
+    books = [
+        ('The Fellowship of the Ring', 'Fiction - Fantasy', 'J.R.R. Tolkien', '9780261103573', '1954', 'The first volume of The Lord of the Rings begins Frodo Baggins journey from the Shire.'),
+        ('The Grapes of Wrath', 'Fiction - Classics', 'John Steinbeck', '9780143039433', '1939', 'A landmark novel about the Joad family migration during the Dust Bowl.'),
+        ('Pride and Prejudice', 'Fiction - Classics', 'Jane Austen', '9780141439518', '1813', 'A sharp comedy of manners about Elizabeth Bennet, family, reputation, and love.'),
+        ('Dune', 'Fiction - Science Fiction', 'Frank Herbert', '9780441172719', '1965', "A desert planet, a contested empire, and one of science fiction's most influential worlds."),
+        ('Beloved', 'Fiction - Historical', 'Toni Morrison', '9781400033416', '1987', 'A haunting novel about memory, motherhood, and the afterlife of slavery.'),
+        ('The Left Hand of Darkness', 'Fiction - Science Fiction', 'Ursula K. Le Guin', '9780441478125', '1969', 'A diplomatic mission to a frozen world becomes a study of culture, gender, and trust.'),
+        ('The Hobbit', 'Fiction - Fantasy', 'J.R.R. Tolkien', '9780547928227', '1937', 'Bilbo Baggins leaves home for a dragon-guarded treasure and finds more courage than expected.'),
+        ('Kindred', 'Fiction - Science Fiction', 'Octavia E. Butler', '9780807083697', '1979', 'A modern woman is pulled into the antebellum past in Butler powerful time-travel novel.'),
+        ("The Handmaid's Tale", 'Fiction - Dystopian', 'Margaret Atwood', '9780385490818', '1985', 'A chilling speculative novel about power, gender, and resistance.'),
+        ('The Name of the Wind', 'Fiction - Fantasy', 'Patrick Rothfuss', '9780756404741', '2007', 'Kvothe recounts the truth and legend behind his life as musician, magician, and fugitive.'),
+        ('Station Eleven', 'Fiction - Literary', 'Emily St. John Mandel', '9780804172448', '2014', 'A post-pandemic novel about art, memory, and survival after collapse.'),
+        ('The Fifth Season', 'Fiction - Fantasy', 'N. K. Jemisin', '9780316229296', '2015', 'A seismic fantasy about oppression, survival, and a world repeatedly ending.'),
+    ]
+    return [
+        {
+            'title': title,
+            'genre': genre,
+            'author': author,
+            'cover_url': _open_library_cover_url(isbn),
+            'isbn': isbn,
+            'year': year,
+            'description': description,
+        }
+        for title, genre, author, isbn, year, description in books
+    ]
+
+
+def _get_reading_content():
+    items = [
+        {
+            'type': 'Article',
+            'title': 'In a reading rut? How to get back into reading for fun',
+            'source': 'The Guardian',
+            'summary': 'Practical ways to make reading feel inviting again, from short sessions to better book choices.',
+            'url': 'https://www.theguardian.com/wellness/2025/nov/17/how-to-start-reading-fun',
+        },
+        {
+            'type': 'Article',
+            'title': 'The Social Dilemma of E-Reading',
+            'source': 'The New Yorker',
+            'summary': 'A sharp look at what changes when private reading becomes a networked social experience.',
+            'url': 'https://www.newyorker.com/books/page-turner/the-social-dilemma-of-e-reading',
+        },
+        {
+            'type': 'Video',
+            'title': 'Why should you read "Fahrenheit 451"?',
+            'source': 'TED-Ed',
+            'summary': 'A short animated introduction to Ray Bradbury and the power of forbidden books.',
+            'url': 'https://www.youtube.com/watch?v=R9n98KChP3M',
+        },
+        {
+            'type': 'Video',
+            'title': 'The Danger of a Single Story',
+            'source': 'TED',
+            'summary': 'Chimamanda Ngozi Adichie on stories, perspective, and why literary variety matters.',
+            'url': 'https://www.ted.com/talks/chimamanda_ngozi_adichie_the_danger_of_a_single_story',
+        },
+        {
+            'type': 'Article',
+            'title': 'Book Girl Summer: Why Brands Are Leaning into the Literary World',
+            'source': 'Vogue',
+            'summary': 'A visual culture piece on reading circles, books, and the renewed appeal of literary taste.',
+            'url': 'https://www.vogue.com/article/book-girl-summer-why-brands-are-leaning-into-the-literary-world',
+        },
+        {
+            'type': 'Video',
+            'title': 'How fiction can change reality',
+            'source': 'TED-Ed',
+            'summary': 'Jessica Wise explains why stories can alter how people think and act.',
+            'url': 'https://www.youtube.com/watch?v=ctaPAm14L10',
+        },
+    ]
+    return [_with_content_image(item) for item in items]
+
+
+def _with_content_image(item):
+    enriched = dict(item)
+    enriched['image_url'] = _resolve_content_image(item['url'])
+    return enriched
+
+
+def _resolve_content_image(url):
+    cache_key = f"reading-content:image:v1:{url}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    image_url = _youtube_thumbnail(url) or _fetch_open_graph_image(url)
+    cache.set(cache_key, image_url, timeout=60 * 60 * 24)
+    return image_url
+
+
+def _youtube_thumbnail(url):
+    match = re.search(r'(?:v=|youtu\.be/)([A-Za-z0-9_-]{6,})', url)
+    if not match:
+        return ''
+    video_id = match.group(1)
+    return f'https://img.youtube.com/vi/{video_id}/hqdefault.jpg'
+
+
+def _fetch_open_graph_image(url):
+    try:
+        resp = requests.get(
+            url,
+            headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+            timeout=2.5,
+        )
+        resp.raise_for_status()
+        html = resp.text[:120000]
+        patterns = [
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
+            r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, html, flags=re.IGNORECASE)
+            if match:
+                image_url = unescape(match.group(1).strip())
+                if image_url.startswith('//'):
+                    return f'https:{image_url}'
+                if image_url.startswith('/'):
+                    origin = re.match(r'https?://[^/]+', url)
+                    return f"{origin.group(0)}{image_url}" if origin else ''
+                return image_url
+    except Exception:
+        logger.debug('Could not fetch content image for %s', url, exc_info=True)
+    return ''

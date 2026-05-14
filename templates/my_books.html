@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - My Books{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/my_books.css' %}">
+{% endblock %}
+
+{% block body %}
+<nav class="nav nav--solid">
+  <a class="nav__logo" href="{% url 'tree:landing' %}">
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
+  </a>
+  <div class="nav__links">
+    <a href="{% url 'tree:landing' %}">Home</a>
+    <a href="{% url 'tree:tree' %}">My Tree</a>
+    <a href="{% url 'tree:community-feed' %}">Community</a>
+    <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
+  </div>
+</nav>
+
+<main class="shelves-page">
+  <aside class="shelves-panel">
+    <p class="section-kicker">Library</p>
+    <h1>My Books</h1>
+    <div class="shelf-list" role="tablist" aria-label="Shelves">
+      <button class="shelf-tab active" data-filter="all">All <span>{{ shelf_counts.all }}</span></button>
+      <button class="shelf-tab" data-filter="want_to_read">Want to Read <span>{{ shelf_counts.want_to_read }}</span></button>
+      <button class="shelf-tab" data-filter="currently_reading">Currently Reading <span>{{ shelf_counts.currently_reading }}</span></button>
+      <button class="shelf-tab" data-filter="read">Read <span>{{ shelf_counts.read }}</span></button>
+      <button class="shelf-tab" data-filter="did_not_finish">Did Not Finish <span>{{ shelf_counts.did_not_finish }}</span></button>
+    </div>
+
+    <div class="custom-shelves">
+      <h2>Custom Shelves</h2>
+      {% for shelf in custom_shelves %}
+        <button class="shelf-tab" data-filter="custom:{{ shelf.custom_shelf|escape }}">{{ shelf.custom_shelf }} <span>{{ shelf.total }}</span></button>
+      {% empty %}
+        <p>No custom shelves yet.</p>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <section class="library-panel">
+    <div class="library-toolbar">
+      <input type="search" id="bookSearch" placeholder="Search title, author, genre, or shelf">
+      <a class="btn btn--primary" href="{% url 'tree:tree' %}">Add Books</a>
+    </div>
+
+    <div class="book-grid" id="bookGrid">
+      {% for book in books %}
+      <article class="library-book" data-id="{{ book.id }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}" data-genre="{{ book.genre|lower }}" data-shelf="{{ book.shelf }}" data-custom="{{ book.custom_shelf|lower }}">
+        <a class="library-book__cover" href="{% url 'tree:book' %}?title={{ book.title|urlencode }}{% if book.author %}&author={{ book.author|urlencode }}{% endif %}{% if book.isbn %}&isbn={{ book.isbn|urlencode }}{% endif %}{% if book.genre %}&genre={{ book.genre|urlencode }}{% endif %}{% if book.year %}&year={{ book.year|urlencode }}{% endif %}{% if book.cover_image %}&cover={{ book.cover_image|urlencode }}{% endif %}">
+          {% if book.get_cover_url %}
+            <img src="{{ book.get_cover_url }}" alt="{{ book.title }} cover" loading="lazy">
+          {% else %}
+            <span>{{ book.title|slice:":1" }}</span>
+          {% endif %}
+        </a>
+        <div class="library-book__body">
+          <h3>{{ book.title }}</h3>
+          <p>{{ book.author|default:"Unknown author" }}</p>
+          <div class="library-book__meta">
+            {% if book.genre %}<span>{{ book.genre }}</span>{% endif %}
+            {% if book.year %}<span>{{ book.year }}</span>{% endif %}
+          </div>
+          <div class="library-book__controls">
+            <select class="shelf-select" aria-label="Shelf for {{ book.title }}">
+              {% for value, label in shelf_choices %}
+                {% if value != 'all' %}
+                  <option value="{{ value }}" {% if book.shelf == value %}selected{% endif %}>{{ label }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+            <input class="custom-shelf-input" type="text" value="{{ book.custom_shelf }}" placeholder="Custom shelf">
+            <button class="btn btn--ghost btn--sm save-book-shelf">Save</button>
+          </div>
+        </div>
+      </article>
+      {% empty %}
+      <div class="empty-library">
+        <h2>No books yet</h2>
+        <p>Add a book to your tree and it will appear here automatically.</p>
+        <a class="btn btn--primary" href="{% url 'tree:tree' %}">Open My Tree</a>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+
+<div id="shelfToast" class="shelf-toast" aria-live="polite"></div>
+<script src="{% static 'js/my_books.js' %}"></script>
+{% endblock %}

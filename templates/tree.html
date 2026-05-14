@@ -253,6 +253,7 @@
     .form-row { display: flex; gap: 14px; }
     .form-row .form-group { flex: 1; }
     .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group--autocomplete { position: relative; }
     .form-group label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
     .form-group input,
     .form-group select,
@@ -266,6 +267,30 @@
     .form-group textarea:focus { border-color: var(--accent); }
     .form-group input[type="color"] { padding: 3px 6px; height: 38px; width: 56px; cursor: pointer; }
     .form-group select option { background: #1b201a; }
+
+    .book-autocomplete {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 20;
+      display: none; max-height: 280px; overflow-y: auto;
+      background: rgba(14, 18, 13, 0.98); border: 1px solid var(--border);
+      border-radius: 12px; box-shadow: var(--shadow);
+    }
+    .book-autocomplete.active { display: block; }
+    .book-autocomplete__item {
+      width: 100%; display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center;
+      border: 0; border-bottom: 1px solid rgba(190, 160, 120, 0.12);
+      background: transparent; color: var(--text-light); padding: 9px 11px; cursor: pointer;
+      font: inherit; text-align: left;
+    }
+    .book-autocomplete__item:hover,
+    .book-autocomplete__item:focus { background: rgba(242, 197, 114, 0.14); outline: none; }
+    .book-autocomplete__cover {
+      width: 30px; height: 44px; border-radius: 4px; background: rgba(242, 197, 114, 0.12);
+      object-fit: cover; display: flex; align-items: center; justify-content: center; color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+    .book-autocomplete__title { display: block; font-weight: 700; line-height: 1.25; }
+    .book-autocomplete__meta { display: block; color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; }
+    .book-autocomplete__year { color: var(--accent); font-size: 0.8rem; }
 
     .cover-picker { display: flex; gap: 14px; align-items: flex-start; }
     .cover-picker__preview {
@@ -417,6 +442,7 @@
     </div>
     <div class="nav__links">
       <span class="nav__user">{{ request.user.username }}</span>
+      <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
       <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
@@ -516,10 +542,10 @@
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group">
+          <div class="form-group form-group--autocomplete">
             <label>Title *</label>
-            <input type="text" id="fTitle" list="bookSuggestions" placeholder="e.g. The Hobbit" required>
-            <datalist id="bookSuggestions"></datalist>
+            <input type="text" id="fTitle" placeholder="e.g. The Hobbit" required autocomplete="off">
+            <div id="bookSuggestions" class="book-autocomplete" role="listbox"></div>
           </div>
           <div class="form-group">
             <label>Author</label>
@@ -550,6 +576,21 @@
           <div class="form-group">
             <label>Rating (0-5)</label>
             <input type="number" id="fRating" min="0" max="5" step="0.5" placeholder="4.5">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Shelf</label>
+            <select id="fShelf">
+              <option value="want_to_read">Want to Read</option>
+              <option value="currently_reading">Currently Reading</option>
+              <option value="read">Read</option>
+              <option value="did_not_finish">Did Not Finish</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Custom Shelf</label>
+            <input type="text" id="fCustomShelf" placeholder="e.g. Summer reads">
           </div>
         </div>
         <div class="form-group">
@@ -653,6 +694,12 @@
     const NODE_IMG_H = 200;
     const H_SEP = 260;
     const V_SEP = 360;
+    const SHELF_LABELS = {
+      want_to_read: 'Want to Read',
+      currently_reading: 'Currently Reading',
+      read: 'Read',
+      did_not_finish: 'Did Not Finish',
+    };
 
     const GENRE_COLORS = {
       'Fantasy':        { bg: '#2f1f18', glow: '#e1b77b', link: '#d9a96a' },
@@ -1724,6 +1771,10 @@
           ${[node.author, node.genre, node.year && `(${node.year})`].filter(Boolean).join(' · ')}
           ${node.rating ? ` · ${'★'.repeat(Math.round(node.rating))}` : ''}
         </div>
+        <div class="sidebar-badges">
+          <span class="sidebar-badge">${SHELF_LABELS[node.shelf] || 'Want to Read'}</span>
+          ${node.custom_shelf ? `<span class="sidebar-badge">${node.custom_shelf}</span>` : ''}
+        </div>
         ${(node.badges||[]).length > 0
           ? `<div class="sidebar-badges">${node.badges.map(b => `<span class="sidebar-badge">${b}</span>`).join('')}</div>`
           : ''}
@@ -1738,6 +1789,15 @@
         ${edgeListBlock}
         <div class="sidebar-section-title">Quick Appearance</div>
         <div class="sidebar-actions">
+          <label class="sidebar-section-title" style="margin-top:2px;">Shelf</label>
+          <select id="quickShelf_${node.id}" class="sidebar-select">
+            <option value="want_to_read" ${(node.shelf || 'want_to_read') === 'want_to_read' ? 'selected' : ''}>Want to Read</option>
+            <option value="currently_reading" ${(node.shelf || '') === 'currently_reading' ? 'selected' : ''}>Currently Reading</option>
+            <option value="read" ${(node.shelf || '') === 'read' ? 'selected' : ''}>Read</option>
+            <option value="did_not_finish" ${(node.shelf || '') === 'did_not_finish' ? 'selected' : ''}>Did Not Finish</option>
+          </select>
+          <label class="sidebar-section-title" style="margin-top:2px;">Custom Shelf</label>
+          <input id="quickCustomShelf_${node.id}" type="text" value="${node.custom_shelf || ''}" class="sidebar-select" placeholder="Optional custom shelf">
           <label class="sidebar-section-title" style="margin-top:2px;">Node Color</label>
           <input id="quickNodeColor_${node.id}" type="color" value="${node.style?.color || '#3a2a1c'}" class="sidebar-select" style="height:38px;padding:4px 8px;">
           <label class="sidebar-section-title" style="margin-top:2px;">Glow Color</label>
@@ -1955,7 +2015,11 @@
         const res = await fetch(`/api/edges/${edgeId}/`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-          body: JSON.stringify({ style: stylePayload }),
+          body: JSON.stringify({
+            style: stylePayload,
+            shelf: document.getElementById(`quickShelf_${nodeId}`)?.value || node.shelf || 'want_to_read',
+            custom_shelf: document.getElementById(`quickCustomShelf_${nodeId}`)?.value.trim() || '',
+          }),
         });
 
         if (!res.ok) { showToast('Failed to update connection style.', 'error'); return; }
@@ -2217,6 +2281,8 @@
       const fYear     = document.getElementById('fYear');
       const fIsbn     = document.getElementById('fIsbn');
       const fRating   = document.getElementById('fRating');
+      const fShelf    = document.getElementById('fShelf');
+      const fCustomShelf = document.getElementById('fCustomShelf');
       const fCoverUrl = document.getElementById('fCoverUrl');
       const fCoverFile= document.getElementById('fCoverFile');
       const fParent   = document.getElementById('fParent');
@@ -2236,6 +2302,7 @@
       let selectedType = 'book';
       let selectedBadges = new Set();
       let autocompleteOptions = [];
+      let suppressTitleLookup = false;
 
       function openModal() {
         fParent.innerHTML = '<option value="">- root (no parent) -</option>';
@@ -2257,6 +2324,8 @@
         editingNode = null;
         fTitle.value = ''; fAuthor.value = ''; fGenre.value = '';
         fYear.value = ''; fIsbn.value = ''; fRating.value = '';
+        if (fShelf) fShelf.value = 'want_to_read';
+        if (fCustomShelf) fCustomShelf.value = '';
         fCoverUrl.value = ''; fNotes.value = '';
         fParent.value = '';
         fColor.value = '#3a2a1c';
@@ -2306,6 +2375,8 @@
         fYear.value   = node.year || '';
         fIsbn.value   = node.isbn || '';
         fRating.value = node.rating || '';
+        if (fShelf) fShelf.value = node.shelf || 'want_to_read';
+        if (fCustomShelf) fCustomShelf.value = node.custom_shelf || '';
         fNotes.value  = node.notes || '';
         fCoverUrl.value = node.cover_image || '';
         if (node.parent) fParent.value = node.parent;
@@ -2381,11 +2452,15 @@
       let titleLookupTimer = null;
 
       fTitle.addEventListener('input', () => {
+        if (suppressTitleLookup) {
+          suppressTitleLookup = false;
+          return;
+        }
         const q = fTitle.value.trim();
         if (titleLookupTimer) clearTimeout(titleLookupTimer);
         if (q.length < 3) {
           autocompleteOptions = [];
-          if (bookSuggestions) bookSuggestions.innerHTML = '';
+          hideBookSuggestions();
           return;
         }
 
@@ -2393,7 +2468,17 @@
       });
 
       fTitle.addEventListener('change', () => { applySuggestionFromTitle(fTitle.value.trim()); });
-      fTitle.addEventListener('blur', () => { applySuggestionFromTitle(fTitle.value.trim(), true); });
+      fTitle.addEventListener('blur', () => {
+        setTimeout(() => {
+          applySuggestionFromTitle(fTitle.value.trim(), true);
+          hideBookSuggestions();
+        }, 120);
+      });
+      fTitle.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown' || !bookSuggestions?.classList.contains('active')) return;
+        event.preventDefault();
+        bookSuggestions.querySelector('.book-autocomplete__item')?.focus();
+      });
 
       async function lookupBooksByTitle(query) {
         try {
@@ -2401,20 +2486,81 @@
           const data = await res.json();
           autocompleteOptions = (data.results || []).slice(0, 8).map(item => ({
             ...item,
-            label: `${item.title || ''}, ${item.author || 'Unknown author'}`,
+            label: `${item.title || ''} - ${item.author || 'Unknown author'}`,
           }));
 
           if (!bookSuggestions) return;
-          bookSuggestions.innerHTML = '';
-          autocompleteOptions.forEach(item => {
-            const opt = document.createElement('option');
-            opt.value = item.label;
-            bookSuggestions.appendChild(opt);
-          });
+          renderBookSuggestions();
         } catch (_) {
           autocompleteOptions = [];
-          if (bookSuggestions) bookSuggestions.innerHTML = '';
+          hideBookSuggestions();
         }
+      }
+
+      function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[ch]));
+      }
+
+      function hideBookSuggestions() {
+        if (!bookSuggestions) return;
+        bookSuggestions.innerHTML = '';
+        bookSuggestions.classList.remove('active');
+      }
+
+      function renderBookSuggestions() {
+        if (!bookSuggestions) return;
+        bookSuggestions.innerHTML = autocompleteOptions.map((item, index) => {
+          const cover = item.cover_url
+            ? `<img class="book-autocomplete__cover" src="${escapeHtml(item.cover_url)}" alt="">`
+            : `<span class="book-autocomplete__cover">Book</span>`;
+          const meta = [item.author || 'Unknown author', item.genre, item.year && `(${item.year})`].filter(Boolean).join(' - ');
+          return `
+            <button type="button" class="book-autocomplete__item" role="option" data-index="${index}">
+              ${cover}
+              <span>
+                <span class="book-autocomplete__title">${escapeHtml(item.title || 'Untitled')}</span>
+                <span class="book-autocomplete__meta">${escapeHtml(meta)}</span>
+              </span>
+              <span class="book-autocomplete__year">${escapeHtml(item.year || '')}</span>
+            </button>
+          `;
+        }).join('');
+        bookSuggestions.classList.toggle('active', autocompleteOptions.length > 0);
+
+        bookSuggestions.querySelectorAll('.book-autocomplete__item').forEach(button => {
+          button.addEventListener('mousedown', event => event.preventDefault());
+          button.addEventListener('click', () => {
+            const item = autocompleteOptions[Number(button.dataset.index)];
+            if (item) selectBookSuggestion(item);
+          });
+          button.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              button.click();
+            }
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              (button.nextElementSibling || bookSuggestions.firstElementChild)?.focus();
+            }
+            if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              (button.previousElementSibling || fTitle)?.focus();
+            }
+          });
+        });
+      }
+
+      function selectBookSuggestion(item) {
+        suppressTitleLookup = true;
+        populateFromBookInfo(item, { force: true });
+        fTitle.value = item.title || fTitle.value;
+        hideBookSuggestions();
       }
 
       function applySuggestionFromTitle(rawValue, allowFirstFallback = false) {
@@ -2429,8 +2575,7 @@
           if (looksLikeAutocompletePick) match = first;
         }
         if (!match) return;
-        populateFromBookInfo(match, { force: true });
-        fTitle.value = match.title || fTitle.value;
+        selectBookSuggestion(match);
       }
 
       function populateFromBookInfo(info, options = {}) {
@@ -2521,6 +2666,8 @@
           year:       fYear.value ? parseInt(fYear.value) : null,
           isbn:       fIsbn.value.trim(),
           rating:     fRating.value ? parseFloat(fRating.value) : null,
+          shelf:      fShelf ? fShelf.value : 'want_to_read',
+          custom_shelf: fCustomShelf ? fCustomShelf.value.trim() : '',
           cover_image: fCoverUrl.value.trim(),
           parent:     fParent.value || null,
           node_type:  selectedType,

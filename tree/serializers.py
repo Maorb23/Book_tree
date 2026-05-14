@@ -15,6 +15,7 @@ class NodeSerializer(serializers.ModelSerializer):
             'cover_image', 'cover_url',
             'parent', 'pos_x', 'pos_y',
             'style', 'date_added', 'date_read',
+            'shelf', 'custom_shelf',
             'badges', 'notes', 'children_count',
         ]
 

@@ -19,6 +19,7 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('tree/', views.tree_page, name='tree'),
+    path('my-books/', views.my_books, name='my-books'),
     path('book/', views.book_page, name='book'),
 
     # API
