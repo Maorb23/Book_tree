@@ -3,6 +3,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
+from smtplib import SMTPException
 from html import unescape
 from django.contrib.auth.models import User
 from django.db import IntegrityError
@@ -96,7 +97,19 @@ def register_view(request):
     next_url = request.POST.get('next') or request.GET.get('next')
     if request.method == 'POST' and form.is_valid():
         user = form.save()
-        _send_verification_email(request, user)
+        try:
+            _send_verification_email(request, user)
+        except (SMTPException, OSError, TimeoutError):
+            logger.exception('Verification email failed for user_id=%s email=%s', user.id, user.email)
+            user.delete()
+            form.add_error(
+                None,
+                'We could not send the verification email right now. Please check the site email settings or try again later.',
+            )
+            return render(request, 'register.html', {
+                'form': form,
+                'next_url': next_url,
+            })
         return render(request, 'register.html', {
             'form': None,
             'next_url': next_url,
