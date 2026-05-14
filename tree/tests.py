@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core import mail
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
@@ -40,3 +41,40 @@ class CommunityModelTests(TestCase):
             content='Added three sci-fi classics.',
         )
         self.assertEqual(post.user, self.user_a)
+
+
+class RegistrationVerificationTests(TestCase):
+    def test_registration_requires_email_verification(self):
+        response = self.client.post(reverse('tree:register'), {
+            'username': 'new_reader',
+            'email': 'reader@example.com',
+            'password1': 'A-strong-test-pass-123',
+            'password2': 'A-strong-test-pass-123',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(username='new_reader')
+        self.assertFalse(user.is_active)
+        self.assertEqual(user.email, 'reader@example.com')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Verify your Readwoods account', mail.outbox[0].subject)
+
+    def test_verification_link_activates_user(self):
+        self.client.post(reverse('tree:register'), {
+            'username': 'new_reader',
+            'email': 'reader@example.com',
+            'password1': 'A-strong-test-pass-123',
+            'password2': 'A-strong-test-pass-123',
+        })
+        verification_url = [
+            part for part in mail.outbox[0].body.split()
+            if '/verify-email/' in part
+        ][0]
+        path = verification_url.split('testserver')[-1]
+
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200)
+
+        user = User.objects.get(username='new_reader')
+        self.assertTrue(user.is_active)
+        self.assertEqual(str(self.client.session['_auth_user_id']), str(user.id))

@@ -16,6 +16,7 @@ urlpatterns = [
     path('community/request/<int:request_id>/accept/', views.accept_friend_request, name='community-accept-request'),
     path('community/request/<int:request_id>/reject/', views.reject_friend_request, name='community-reject-request'),
     path('register/', views.register_view, name='register'),
+    path('verify-email/<uidb64>/<token>/', views.verify_email_view, name='verify-email'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('tree/', views.tree_page, name='tree'),

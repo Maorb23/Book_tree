@@ -11,6 +11,10 @@
 
     {% if already_logged_in %}
       <div class="auth-message auth-message--ok">You are already signed in. <a href="{% url 'tree:tree' %}">Go to My Tree</a>.</div>
+    {% elif verified %}
+      <div class="auth-message auth-message--ok">Email verified. You are signed in and ready to grow your tree. <a href="{% url 'tree:tree' %}">Open My Tree</a>.</div>
+    {% elif verification_error %}
+      <div class="auth-message auth-message--error">This verification link is invalid or expired. Please create a new account or contact support.</div>
     {% elif success %}
       <div class="auth-message auth-message--ok">Signed in successfully. <a href="{% url 'tree:tree' %}">Open My Tree</a>.</div>
     {% elif logged_out %}

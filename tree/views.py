@@ -12,9 +12,16 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.core.cache import cache
+from django.conf import settings
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm
+from django.urls import reverse
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -23,6 +30,7 @@ from rest_framework import status
 
 from .models import Node, Edge, FriendRequest, Friendship, CommunityPost
 from .serializers import NodeSerializer, EdgeSerializer
+from .forms import EmailUserCreationForm
 
 
 logger = logging.getLogger(__name__)
@@ -84,17 +92,66 @@ def register_view(request):
     if request.user.is_authenticated:
         return redirect('tree:tree')
 
-    form = UserCreationForm(request.POST or None)
+    form = EmailUserCreationForm(request.POST or None)
     next_url = request.POST.get('next') or request.GET.get('next')
     if request.method == 'POST' and form.is_valid():
         user = form.save()
-        login(request, user)
-        return redirect(next_url or 'tree:tree')
+        _send_verification_email(request, user)
+        return render(request, 'register.html', {
+            'form': None,
+            'next_url': next_url,
+            'verification_sent': True,
+            'email': user.email,
+        })
 
     return render(request, 'register.html', {
         'form': form,
         'next_url': next_url,
     })
+
+
+def verify_email_view(request, uidb64, token):
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    if user is not None and default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+        login(request, user)
+        return render(request, 'login.html', {
+            'form': None,
+            'verified': True,
+        })
+
+    return render(request, 'login.html', {
+        'form': AuthenticationForm(request),
+        'verification_error': True,
+    })
+
+
+def _send_verification_email(request, user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    verify_url = request.build_absolute_uri(
+        reverse('tree:verify-email', args=[uid, token])
+    )
+    subject = 'Verify your Readwoods account'
+    message = (
+        f'Hi {user.username},\n\n'
+        'Welcome to Readwoods. Please verify your email address to activate your account:\n\n'
+        f'{verify_url}\n\n'
+        'If you did not create this account, you can ignore this email.'
+    )
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+    )
 
 
 def login_view(request):

@@ -11,8 +11,10 @@
 
     {% if already_logged_in %}
       <div class="auth-message auth-message--ok">You are already registered and signed in. <a href="{% url 'tree:tree' %}">Go to My Tree</a>.</div>
-    {% elif success %}
-      <div class="auth-message auth-message--ok">Account created successfully. <a href="{% url 'tree:tree' %}">Open My Tree</a>.</div>
+    {% elif verification_sent %}
+      <div class="auth-message auth-message--ok">
+        We sent a verification link to {{ email }}. Open it to activate your account, then you can start building your tree.
+      </div>
     {% endif %}
 
     {% if form %}
@@ -26,6 +28,10 @@
       <label for="id_username">Username</label>
       {{ form.username }}
       {% if form.username.errors %}<div class="field-error">{{ form.username.errors }}</div>{% endif %}
+
+      <label for="id_email">Email</label>
+      {{ form.email }}
+      {% if form.email.errors %}<div class="field-error">{{ form.email.errors }}</div>{% endif %}
 
       <label for="id_password1">Password</label>
       {{ form.password1 }}
