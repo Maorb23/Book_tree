@@ -4,6 +4,7 @@ from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from requests import HTTPError
 from unittest.mock import patch
 
 from .email_backends import ResendEmailBackend
@@ -84,6 +85,19 @@ class RegistrationVerificationTests(TestCase):
         self.assertEqual(len(mail.outbox), 2)
         self.assertIn('Welcome to Readwoods', mail.outbox[1].subject)
 
+    @patch('tree.views.send_mail', side_effect=HTTPError('403 error from Resend'))
+    def test_registration_email_api_failure_returns_form_error(self, mock_send_mail):
+        response = self.client.post(reverse('tree:register'), {
+            'username': 'new_reader',
+            'email': 'reader@example.com',
+            'password1': 'A-strong-test-pass-123',
+            'password2': 'A-strong-test-pass-123',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'We could not send the verification email right now.')
+        self.assertFalse(User.objects.filter(username='new_reader').exists())
+
 
 class ResendEmailBackendTests(SimpleTestCase):
     @override_settings(
@@ -109,6 +123,7 @@ class ResendEmailBackendTests(SimpleTestCase):
             headers={
                 'Authorization': 'Bearer re_test_key',
                 'Content-Type': 'application/json',
+                'User-Agent': 'Readwoods/1.0',
             },
             json={
                 'from': 'Readwoods <verify@example.com>',

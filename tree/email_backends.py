@@ -1,9 +1,9 @@
+import requests
+
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.mail.message import sanitize_address
 from django.utils.encoding import force_str
-
-import requests
 
 
 class ResendEmailBackend(BaseEmailBackend):
@@ -71,11 +71,16 @@ class ResendEmailBackend(BaseEmailBackend):
             headers={
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json',
+                'User-Agent': 'Readwoods/1.0',
             },
             json=payload,
             timeout=self.timeout,
         )
-        response.raise_for_status()
+        if not response.ok:
+            raise requests.HTTPError(
+                f'{response.status_code} error from Resend: {response.text}',
+                response=response,
+            )
 
     def _html_body(self, message):
         if getattr(message, 'content_subtype', '') == 'html':

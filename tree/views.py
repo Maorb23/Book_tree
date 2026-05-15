@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import random
 import re
 from smtplib import SMTPException
+from requests import RequestException
 from html import unescape
 from django.contrib.auth.models import User
 from django.db import IntegrityError
@@ -99,7 +100,7 @@ def register_view(request):
         user = form.save()
         try:
             _send_verification_email(request, user)
-        except (SMTPException, OSError, TimeoutError):
+        except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
             logger.exception('Verification email failed for user_id=%s email=%s', user.id, user.email)
             user.delete()
             form.add_error(
@@ -135,7 +136,7 @@ def verify_email_view(request, uidb64, token):
         user.save(update_fields=['is_active'])
         try:
             _send_welcome_email(user)
-        except (SMTPException, OSError, TimeoutError):
+        except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
             logger.exception('Welcome email failed for user_id=%s email=%s', user.id, user.email)
         login(request, user)
         return render(request, 'login.html', {
