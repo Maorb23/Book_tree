@@ -32,9 +32,10 @@ def _csv_env(name, default=''):
 
 def _email_env(name, default):
     value = _env(name, default)
+    value = value.replace('<<', '<').replace('>>', '>')
     parts = value.rsplit(maxsplit=1)
     if len(parts) == 2 and '@' in parts[1]:
-        return formataddr((parts[0], parts[1]))
+        return formataddr((parts[0], parts[1].strip('<>')))
 
     display_name, address = parseaddr(value)
     if address and display_name:

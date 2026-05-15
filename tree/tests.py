@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from .email_backends import ResendEmailBackend
 from .models import FriendRequest, Friendship, CommunityPost
+from book_tree.settings import _email_env
 
 
 class CommunityModelTests(TestCase):
@@ -133,3 +134,13 @@ class ResendEmailBackendTests(SimpleTestCase):
             },
             timeout=10,
         )
+
+
+class EmailSettingsTests(SimpleTestCase):
+    @override_settings()
+    def test_email_env_normalizes_accidental_double_angle_brackets(self):
+        with patch.dict('os.environ', {'DEFAULT_FROM_EMAIL': 'Readwoods <<verify@readwoods.com>>'}):
+            self.assertEqual(
+                _email_env('DEFAULT_FROM_EMAIL', ''),
+                'Readwoods <verify@readwoods.com>',
+            )
