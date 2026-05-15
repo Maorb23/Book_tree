@@ -1,10 +1,17 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Sign In - Readwoods{% endblock %}
 
 {% block body %}
 <section class="auth-page">
   <div class="auth-card">
+    <a href="{% url 'tree:landing' %}" class="auth-brand" aria-label="Readwoods home">
+      <span class="site-logo" aria-hidden="true">
+        <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+      </span>
+      <span>Readwoods</span>
+    </a>
     <a href="{% url 'tree:landing' %}" class="auth-back">← Back to home</a>
     <h1>Sign in to Readwoods</h1>
     <p class="auth-sub">Access your personal tree and share recommendations with your community.</p>

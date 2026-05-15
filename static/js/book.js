@@ -16,9 +16,13 @@
   const queryParts = [];
   if (titleSeed) queryParts.push(titleSeed);
   if (authorSeed) queryParts.push(authorSeed);
-  if (!queryParts.length && isbnSeed) queryParts.push(isbnSeed);
-
-  const query = queryParts.join(' ').trim();
+  const titleAuthorQuery = queryParts.join(' ').trim();
+  const queryCandidates = [
+    isbnSeed,
+    titleAuthorQuery,
+    titleSeed,
+  ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
+  const query = queryCandidates[0] || '';
 
   const titleEl = document.getElementById('bookTitle');
   const authorEl = document.getElementById('bookAuthor');
@@ -88,9 +92,13 @@
     setSearchLink(query);
 
     try {
-      const response = await fetch(`/api/book-search/?q=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      const result = (data.results || [])[0];
+      let result = null;
+      for (const candidate of queryCandidates) {
+        const response = await fetch(`/api/book-search/?q=${encodeURIComponent(candidate)}`);
+        const data = await response.json();
+        result = (data.results || [])[0] || null;
+        if (result) break;
+      }
 
       if (!result) {
         titleEl.textContent = titleSeed || 'Book not found';

@@ -33,6 +33,8 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  color: inherit;
+  text-decoration: none;
 }
 
 .nav__name {
@@ -66,6 +68,25 @@ body {
   color: #d4f0b9;
   border-radius: 999px;
   padding: 7px 16px;
+}
+
+@media (max-width: 760px) {
+  .nav {
+    padding: 12px 14px;
+    gap: 12px;
+  }
+
+  .nav__links {
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .nav__links a {
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+  }
 }
 
 .book-page {

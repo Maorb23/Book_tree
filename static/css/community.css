@@ -335,16 +335,40 @@ body {
 
 @media (max-width: 720px) {
   .community-nav {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
   }
   .community-nav__links {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     justify-content: flex-start;
+    padding: 2px 2px 8px;
+    scroll-snap-type: inline proximity;
+    scrollbar-width: thin;
+  }
+  .community-nav .btn {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    scroll-snap-align: start;
+  }
+  .community-nav__brand span:last-child {
+    display: none;
+  }
+  .community-shell {
+    width: min(100% - 24px, 1100px);
+    margin-top: 18px;
   }
   .post-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .request-row,
+  .person-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

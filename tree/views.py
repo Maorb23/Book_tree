@@ -627,6 +627,15 @@ def search_books(request):
 
 
 def _search_books_combined(query):
+    isbn_query = _normalize_isbn_query(query)
+    if isbn_query:
+        try:
+            isbn_results = _search_books_google_isbn(isbn_query)
+            if isbn_results:
+                return isbn_results
+        except Exception:
+            logger.exception('Google Books ISBN lookup failed for isbn=%r', isbn_query)
+
     with ThreadPoolExecutor(max_workers=2) as executor:
         google_future = executor.submit(_search_books_google, query)
         open_library_future = executor.submit(_search_books_open_library, query)
@@ -744,6 +753,73 @@ def _best_isbn(values):
     return isbn_13 or (normalized[0] if normalized else '')
 
 
+def _normalize_isbn_query(value):
+    normalized = ''.join(ch for ch in str(value or '') if ch.isdigit() or ch.upper() == 'X')
+    return normalized if len(normalized) in (10, 13) else ''
+
+
+def _google_volume_to_row(item):
+    info = item.get('volumeInfo', {})
+    title = (info.get('title') or '').strip()
+    if not title:
+        return None
+
+    authors = info.get('authors') or []
+    categories = info.get('categories') or []
+    published = info.get('publishedDate') or ''
+    year = (published[:4] if published else '')
+    desc = info.get('description') or ''
+
+    isbn_13 = ''
+    isbn_10 = ''
+    for ident in info.get('industryIdentifiers') or []:
+        ident_type = ident.get('type')
+        ident_value = (ident.get('identifier') or '').replace('-', '').strip()
+        if ident_type == 'ISBN_13' and not isbn_13:
+            isbn_13 = ident_value
+        elif ident_type == 'ISBN_10' and not isbn_10:
+            isbn_10 = ident_value
+    isbn = isbn_13 or isbn_10
+
+    image_links = info.get('imageLinks') or {}
+    cover_url = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
+    if cover_url:
+        cover_url = cover_url.replace('http://', 'https://').replace('&zoom=1', '&zoom=2')
+
+    author_text = ', '.join(authors).strip() or 'Unknown author'
+    has_author = 0 if author_text == 'Unknown author' else 1
+    has_cover = 1 if cover_url else 0
+
+    return {
+        'title': title,
+        'author': author_text,
+        'genre': _genre_label(categories[0] if categories else ''),
+        'year': year,
+        'isbn': isbn,
+        'isbn_options': [isbn_13, isbn_10],
+        'cover_url': cover_url,
+        'description': desc,
+        '_score': has_cover * 4 + has_author * 2,
+    }
+
+
+def _search_books_google_isbn(isbn):
+    resp = requests.get(
+        'https://www.googleapis.com/books/v1/volumes',
+        params={'q': f'isbn:{isbn}', 'maxResults': 3, 'printType': 'books'},
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=3.5,
+    )
+    resp.raise_for_status()
+    rows = [
+        row for row in (_google_volume_to_row(item) for item in resp.json().get('items', []))
+        if row
+    ]
+    for row in rows:
+        row.pop('_score', None)
+    return rows
+
+
 def _apply_known_book_metadata(row):
     overrides = {
         ('the grapes of wrath', 'john steinbeck'): {
@@ -789,50 +865,10 @@ def _search_books_google(query, max_results=8):
     data = resp.json()
     items = data.get('items', [])
 
-    results = []
-    for item in items:
-        info = item.get('volumeInfo', {})
-        title = (info.get('title') or '').strip()
-        if not title:
-            continue
-
-        authors = info.get('authors') or []
-        categories = info.get('categories') or []
-        published = info.get('publishedDate') or ''
-        year = (published[:4] if published else '')
-        desc = info.get('description') or ''
-
-        isbn_13 = ''
-        isbn_10 = ''
-        for ident in info.get('industryIdentifiers') or []:
-            ident_type = ident.get('type')
-            ident_value = (ident.get('identifier') or '').replace('-', '').strip()
-            if ident_type == 'ISBN_13' and not isbn_13:
-                isbn_13 = ident_value
-            elif ident_type == 'ISBN_10' and not isbn_10:
-                isbn_10 = ident_value
-        isbn = isbn_13 or isbn_10
-
-        image_links = info.get('imageLinks') or {}
-        cover_url = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
-        if cover_url:
-            cover_url = cover_url.replace('http://', 'https://').replace('&zoom=1', '&zoom=2')
-
-        author_text = ', '.join(authors).strip() or 'Unknown author'
-        has_author = 0 if author_text == 'Unknown author' else 1
-        has_cover = 1 if cover_url else 0
-
-        results.append({
-            'title': title,
-            'author': author_text,
-            'genre': _genre_label(categories[0] if categories else ''),
-            'year': year,
-            'isbn': isbn,
-            'isbn_options': [isbn_13, isbn_10],
-            'cover_url': cover_url,
-            'description': desc,
-            '_score': has_cover * 4 + has_author * 2,
-        })
+    results = [
+        row for row in (_google_volume_to_row(item) for item in items)
+        if row
+    ]
 
     # Prefer suggestions with complete metadata (cover + author) and keep deterministic ordering.
     ranked = sorted(

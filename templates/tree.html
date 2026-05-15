@@ -423,8 +423,30 @@
       .cover-picker { flex-direction: column; }
       .cover-picker__preview { width: 72px; height: 108px; }
       .nav { grid-template-columns: 1fr; height: auto; gap: 10px; padding: 12px 16px; }
-      .nav__links { justify-content: space-between; flex-wrap: wrap; }
+      .nav__links { justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+      .nav__links .btn,
+      .nav__user { flex: 0 0 auto; }
       .nav__search { max-width: none; }
+      .canvas-wrap { top: 156px; }
+      .minimap { width: 128px; bottom: 12px; right: 12px; }
+      #minimapSvg { height: 90px; }
+      .minimap__header { padding: 5px 8px; font-size: 0.62rem; }
+      .zoom-controls { right: 152px; bottom: 12px; }
+      .zoom-controls button { width: 34px; height: 34px; }
+      .float-bar {
+        left: 12px;
+        right: 12px;
+        bottom: 112px;
+        transform: none;
+        justify-content: flex-start;
+        overflow-x: auto;
+        border-radius: 14px;
+        padding: 8px;
+      }
+      .float-btn { flex: 0 0 auto; }
+      .sidebar { top: 156px; width: 100%; }
+      #toastHost { left: 12px; right: 12px; top: 12px; }
+      .app-toast { min-width: 0; max-width: none; }
     }
   </style>
 </head>
@@ -1537,10 +1559,15 @@
       const ys = allNodes.filter(n => n._y != null).map(n => n._y);
       if (!xs.length) return;
 
+      if (stumpTreeAnchor.x || stumpTreeAnchor.y) {
+        xs.push(stumpTreeAnchor.x - 210, stumpTreeAnchor.x + 210);
+        ys.push(stumpTreeAnchor.y - 90, stumpTreeAnchor.y + 190);
+      }
+
       const minX = Math.min(...xs) - NODE_W / 2 - 60;
       const maxX = Math.max(...xs) + NODE_W / 2 + 60;
       const minY = Math.min(...ys) - NODE_H / 2 - 80;
-      const maxY = Math.max(...ys) + NODE_H / 2 + 80;
+      const maxY = Math.max(...ys) + NODE_H / 2 + 110;
 
       const treeW = maxX - minX;
       const treeH = maxY - minY;
@@ -1566,6 +1593,11 @@
       const xs = allNodes.filter(n => n._x != null).map(n => n._x);
       const ys = allNodes.filter(n => n._y != null).map(n => n._y);
       if (!xs.length) return;
+
+      if (stumpTreeAnchor.x || stumpTreeAnchor.y) {
+        xs.push(stumpTreeAnchor.x - 210, stumpTreeAnchor.x + 210);
+        ys.push(stumpTreeAnchor.y - 90, stumpTreeAnchor.y + 190);
+      }
 
       const minX = Math.min(...xs) - NODE_W;
       const maxX = Math.max(...xs) + NODE_W;

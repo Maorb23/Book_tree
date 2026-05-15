@@ -9,12 +9,12 @@
 
 {% block body %}
 <nav class="nav">
-  <div class="nav__logo">
+  <a href="{% url 'tree:landing' %}" class="nav__logo" aria-label="Readwoods home">
     <span class="site-logo" aria-hidden="true">
       <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
     </span>
     <span class="nav__name">Readwoods</span>
-  </div>
+  </a>
   <div class="nav__links">
     <a href="#recommendations">Books</a>
     <a href="#features">Features</a>
