@@ -133,6 +133,10 @@ def verify_email_view(request, uidb64, token):
     if user is not None and default_token_generator.check_token(user, token):
         user.is_active = True
         user.save(update_fields=['is_active'])
+        try:
+            _send_welcome_email(user)
+        except (SMTPException, OSError, TimeoutError):
+            logger.exception('Welcome email failed for user_id=%s email=%s', user.id, user.email)
         login(request, user)
         return render(request, 'login.html', {
             'form': None,
@@ -157,6 +161,24 @@ def _send_verification_email(request, user):
         'Welcome to Readwoods. Please verify your email address to activate your account:\n\n'
         f'{verify_url}\n\n'
         'If you did not create this account, you can ignore this email.'
+    )
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+    )
+
+
+def _send_welcome_email(user):
+    subject = 'Welcome to Readwoods'
+    message = (
+        f'Hi {user.username},\n\n'
+        'Your email is verified and your Readwoods account is active.\n\n'
+        'You can now save your reading tree, track books, and share progress with friends.\n\n'
+        'Happy reading,\n'
+        'The Readwoods team'
     )
     send_mail(
         subject,

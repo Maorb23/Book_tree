@@ -3,6 +3,7 @@ Django settings for book_tree project.
 """
 import os
 from pathlib import Path
+from email.utils import formataddr, parseaddr
 from urllib.parse import urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -10,8 +11,37 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-book-tree-dev-key-change-in-production')
 
 
+def _env(name, default=''):
+    return os.getenv(name, default).strip()
+
+
+def _bool_env(name, default='false'):
+    return _env(name, default).lower() in ('1', 'true', 'yes', 'on')
+
+
+def _int_env(name, default):
+    try:
+        return int(_env(name, str(default)))
+    except ValueError:
+        return default
+
+
 def _csv_env(name, default=''):
     return [item.strip() for item in os.getenv(name, default).split(',') if item.strip()]
+
+
+def _email_env(name, default):
+    value = _env(name, default)
+    parts = value.rsplit(maxsplit=1)
+    if len(parts) == 2 and '@' in parts[1]:
+        return formataddr((parts[0], parts[1]))
+
+    display_name, address = parseaddr(value)
+    if address and display_name:
+        return formataddr((display_name, address))
+    if address and not any(ch.isspace() for ch in address):
+        return address
+    return value
 
 
 def _normalize_csrf_origin(value):
@@ -25,11 +55,11 @@ def _normalize_csrf_origin(value):
     return origin
 
 
-DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
+DEBUG = _bool_env('DEBUG', 'true')
 
-railway_public_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '').strip()
+railway_public_domain = _env('RAILWAY_PUBLIC_DOMAIN')
 
-if os.getenv('ALLOWED_HOSTS'):
+if _env('ALLOWED_HOSTS'):
     ALLOWED_HOSTS = _csv_env('ALLOWED_HOSTS')
 else:
     ALLOWED_HOSTS = ['*']
@@ -108,8 +138,8 @@ if DATABASE_URL:
             'PASSWORD': parsed.password,
             'HOST': parsed.hostname,
             'PORT': parsed.port or '',
-            'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '60')),
-            'OPTIONS': {'sslmode': 'require'} if os.getenv('DB_SSL', 'true').lower() == 'true' else {},
+            'CONN_MAX_AGE': _int_env('DB_CONN_MAX_AGE', 60),
+            'OPTIONS': {'sslmode': 'require'} if _bool_env('DB_SSL', 'true') else {},
         }
     }
 else:
@@ -142,17 +172,17 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'true').lower() == 'true'
+CORS_ALLOW_ALL_ORIGINS = _bool_env('CORS_ALLOW_ALL_ORIGINS', 'true')
 
-EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
-EMAIL_HOST = os.getenv('EMAIL_HOST', '')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'true').lower() == 'true'
-EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').lower() == 'true'
-EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Readwoods <no-reply@readwoods.local>')
+EMAIL_BACKEND = _env('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = _env('EMAIL_HOST')
+EMAIL_PORT = _int_env('EMAIL_PORT', 587)
+EMAIL_HOST_USER = _env('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = _env('EMAIL_HOST_PASSWORD')
+EMAIL_USE_SSL = _bool_env('EMAIL_USE_SSL', 'false')
+EMAIL_USE_TLS = _bool_env('EMAIL_USE_TLS', 'true') and not EMAIL_USE_SSL
+EMAIL_TIMEOUT = _int_env('EMAIL_TIMEOUT', 10)
+DEFAULT_FROM_EMAIL = _email_env('DEFAULT_FROM_EMAIL', 'Readwoods <no-reply@readwoods.local>')
 
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [

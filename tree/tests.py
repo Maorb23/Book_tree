@@ -78,3 +78,5 @@ class RegistrationVerificationTests(TestCase):
         user = User.objects.get(username='new_reader')
         self.assertTrue(user.is_active)
         self.assertEqual(str(self.client.session['_auth_user_id']), str(user.id))
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertIn('Welcome to Readwoods', mail.outbox[1].subject)
