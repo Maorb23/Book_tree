@@ -174,7 +174,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = _bool_env('CORS_ALLOW_ALL_ORIGINS', 'true')
 
-EMAIL_BACKEND = _env('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+RESEND_API_KEY = _env('RESEND_API_KEY')
+RESEND_API_URL = _env('RESEND_API_URL', 'https://api.resend.com/emails')
+RESEND_TIMEOUT = _int_env('RESEND_TIMEOUT', 10)
+EMAIL_PROVIDER = _env('EMAIL_PROVIDER', 'resend' if RESEND_API_KEY else '').lower()
+EMAIL_BACKEND = (
+    'tree.email_backends.ResendEmailBackend'
+    if EMAIL_PROVIDER == 'resend'
+    else _env('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+)
 EMAIL_HOST = _env('EMAIL_HOST')
 EMAIL_PORT = _int_env('EMAIL_PORT', 587)
 EMAIL_HOST_USER = _env('EMAIL_HOST_USER')

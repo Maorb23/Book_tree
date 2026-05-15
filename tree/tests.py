@@ -1,9 +1,12 @@
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from unittest.mock import patch
 
+from .email_backends import ResendEmailBackend
 from .models import FriendRequest, Friendship, CommunityPost
 
 
@@ -80,3 +83,38 @@ class RegistrationVerificationTests(TestCase):
         self.assertEqual(str(self.client.session['_auth_user_id']), str(user.id))
         self.assertEqual(len(mail.outbox), 2)
         self.assertIn('Welcome to Readwoods', mail.outbox[1].subject)
+
+
+class ResendEmailBackendTests(SimpleTestCase):
+    @override_settings(
+        RESEND_API_KEY='re_test_key',
+        RESEND_API_URL='https://api.resend.com/emails',
+        RESEND_TIMEOUT=10,
+    )
+    @patch('tree.email_backends.requests.post')
+    def test_resend_backend_sends_email_via_https_api(self, mock_post):
+        mock_post.return_value.raise_for_status.return_value = None
+        message = EmailMessage(
+            subject='Verify your Readwoods account',
+            body='Open this link to verify.',
+            from_email='Readwoods <verify@example.com>',
+            to=['reader@example.com'],
+        )
+
+        sent_count = ResendEmailBackend().send_messages([message])
+
+        self.assertEqual(sent_count, 1)
+        mock_post.assert_called_once_with(
+            'https://api.resend.com/emails',
+            headers={
+                'Authorization': 'Bearer re_test_key',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'from': 'Readwoods <verify@example.com>',
+                'to': ['reader@example.com'],
+                'subject': 'Verify your Readwoods account',
+                'text': 'Open this link to verify.',
+            },
+            timeout=10,
+        )
