@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from .email_backends import ResendEmailBackend
 from .models import FriendRequest, Friendship, CommunityPost
+from .views import _apply_known_book_metadata
 from book_tree.settings import _email_env
 
 
@@ -144,3 +145,18 @@ class EmailSettingsTests(SimpleTestCase):
                 _email_env('DEFAULT_FROM_EMAIL', ''),
                 'Readwoods <verify@readwoods.com>',
             )
+
+
+class BookSearchMetadataTests(SimpleTestCase):
+    def test_known_metadata_preserves_beloved_original_publication(self):
+        row = _apply_known_book_metadata({
+            'title': 'Beloved',
+            'author': 'Toni Morrison',
+            'year': '2007',
+            'isbn': '',
+            'genre': '',
+            'cover_url': '',
+        })
+
+        self.assertEqual(row['year'], '1987')
+        self.assertEqual(row['isbn'], '9781400033416')

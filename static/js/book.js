@@ -18,9 +18,9 @@
   if (authorSeed) queryParts.push(authorSeed);
   const titleAuthorQuery = queryParts.join(' ').trim();
   const queryCandidates = [
-    isbnSeed,
     titleAuthorQuery,
     titleSeed,
+    isbnSeed,
   ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
   const query = queryCandidates[0] || '';
 

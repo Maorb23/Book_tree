@@ -840,6 +840,12 @@ def _apply_known_book_metadata(row):
             'cover_url': _open_library_cover_url('9780261103573'),
             'genre': 'Fiction - Fantasy',
         },
+        ('beloved', 'toni morrison'): {
+            'isbn': '9781400033416',
+            'year': '1987',
+            'cover_url': _open_library_cover_url('9781400033416'),
+            'genre': 'Fiction - Historical',
+        },
     }
     author_key = _normalize_text((row.get('author') or '').split(',')[0])
     override = overrides.get((_normalize_text(row.get('title')), author_key))

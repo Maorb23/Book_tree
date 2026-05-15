@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  const tabs = Array.from(document.querySelectorAll('.shelf-tab'));
   const cards = Array.from(document.querySelectorAll('.library-book'));
   const search = document.getElementById('bookSearch');
   const toast = document.getElementById('shelfToast');
@@ -17,6 +16,16 @@
     toast.textContent = message;
     toast.classList.add('visible');
     setTimeout(() => toast.classList.remove('visible'), 2200);
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
   }
 
   function matchesFilter(card) {
@@ -45,12 +54,65 @@
     });
   }
 
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      activeFilter = tab.dataset.filter || 'all';
-      tabs.forEach(item => item.classList.toggle('active', item === tab));
-      applyFilters();
+  function syncShelfTabs() {
+    const baseCounts = {
+      all: cards.length,
+      want_to_read: 0,
+      currently_reading: 0,
+      read: 0,
+      did_not_finish: 0,
+    };
+    const customCounts = new Map();
+
+    cards.forEach(card => {
+      const shelf = card.dataset.shelf || 'want_to_read';
+      if (baseCounts[shelf] !== undefined) baseCounts[shelf] += 1;
+      const custom = (card.dataset.custom || '').trim();
+      const customLabel = (card.dataset.customLabel || custom).trim();
+      if (custom) {
+        const existing = customCounts.get(custom) || { label: customLabel, count: 0 };
+        existing.count += 1;
+        if (customLabel) existing.label = customLabel;
+        customCounts.set(custom, existing);
+      }
     });
+
+    Object.entries(baseCounts).forEach(([filter, count]) => {
+      const tab = document.querySelector(`.shelf-tab[data-filter="${filter}"]`);
+      const countEl = tab?.querySelector('span');
+      if (countEl) countEl.textContent = String(count);
+    });
+
+    const customHost = document.querySelector('.custom-shelves');
+    if (!customHost) return;
+    customHost.querySelectorAll('.shelf-tab').forEach(tab => tab.remove());
+    const empty = customHost.querySelector('p');
+    if (empty) empty.style.display = customCounts.size ? 'none' : '';
+
+    [...customCounts.entries()]
+      .sort(([, a], [, b]) => a.label.localeCompare(b.label))
+      .forEach(([key, row]) => {
+        const button = document.createElement('button');
+        button.className = `shelf-tab${activeFilter === `custom:${key}` ? ' active' : ''}`;
+        button.dataset.filter = `custom:${key}`;
+        button.innerHTML = `${escapeHtml(row.label)} <span>${row.count}</span>`;
+        customHost.appendChild(button);
+      });
+
+    const activeTab = Array.from(document.querySelectorAll('.shelf-tab'))
+      .find(tab => (tab.dataset.filter || 'all') === activeFilter);
+    if (!activeTab) activeFilter = 'all';
+    document.querySelectorAll('.shelf-tab').forEach(tab => {
+      tab.classList.toggle('active', (tab.dataset.filter || 'all') === activeFilter);
+    });
+  }
+
+  document.addEventListener('click', event => {
+    const tab = event.target.closest('.shelf-tab');
+    if (!tab) return;
+    activeFilter = tab.dataset.filter || 'all';
+    document.querySelectorAll('.shelf-tab').forEach(item => item.classList.toggle('active', item === tab));
+    applyFilters();
   });
 
   search?.addEventListener('input', applyFilters);
@@ -73,6 +135,8 @@
         if (!res.ok) throw new Error('Save failed');
         card.dataset.shelf = shelf;
         card.dataset.custom = customShelf.toLowerCase();
+        card.dataset.customLabel = customShelf;
+        syncShelfTabs();
         applyFilters();
         showToast('Shelf updated.');
       } catch (_) {
@@ -84,5 +148,6 @@
     });
   });
 
+  syncShelfTabs();
   applyFilters();
 })();

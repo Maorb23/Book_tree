@@ -2206,6 +2206,12 @@
       return cookie ? cookie.split('=')[1] : '';
     }
 
+    function syncTreeEmptyState() {
+      const emptyState = document.getElementById('emptyState');
+      if (!emptyState) return;
+      emptyState.style.display = allNodes.length === 0 ? 'flex' : 'none';
+    }
+
     function upsertTreeNode(rawNode) {
       if (!rawNode || !rawNode.id) return null;
       const node = { ...rawNode, id: String(rawNode.id), parent: rawNode.parent ? String(rawNode.parent) : null };
@@ -2215,6 +2221,7 @@
       nodeMap[node.id] = idx >= 0 ? allNodes[idx] : node;
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      syncTreeEmptyState();
       renderTreeInstant();
       return nodeMap[node.id];
     }
@@ -2234,6 +2241,7 @@
       allNodes.forEach((node) => { nodeMap[node.id] = node; });
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      syncTreeEmptyState();
       renderTreeInstant();
     }
 
