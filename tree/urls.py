@@ -28,10 +28,12 @@ urlpatterns = [
     # API
     path('api/tree/', views.tree_data, name='api-tree'),
     path('api/tree/versions/', views.tree_version_list, name='api-tree-versions'),
+    path('api/tree/versions/save/', views.tree_version_create, name='api-tree-version-create'),
     path('api/tree/versions/<int:version_id>/restore/', views.tree_version_restore, name='api-tree-version-restore'),
     path('api/nodes/', views.node_list, name='api-node-list'),
     path('api/nodes/<str:pk>/', views.node_detail, name='api-node-detail'),
     path('api/imported-books/<int:pk>/', views.imported_book_detail, name='api-imported-book-detail'),
+    path('api/imported-books/<int:pk>/add-to-tree/', views.imported_book_add_to_tree, name='api-imported-book-add-to-tree'),
     path('api/edges/', views.edge_list, name='api-edge-list'),
     path('api/edges/<str:pk>/', views.edge_detail, name='api-edge-detail'),
     path('api/cover/', views.fetch_cover, name='api-cover'),

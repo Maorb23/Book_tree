@@ -123,6 +123,19 @@
             </select>
             <input class="custom-shelf-input" type="text" value="{{ book.custom_shelf }}" placeholder="Custom shelf">
             <button class="btn btn--ghost btn--sm save-book-shelf">Save</button>
+            <div class="add-to-tree">
+              <select class="tree-parent-select" aria-label="Tree parent for {{ book.title }}">
+                <option value="">Add as main node</option>
+                {% for parent in tree_parent_options %}
+                  {% if parent.id != book.id %}
+                    <option value="{{ parent.id }}">{{ parent.title }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              <button class="btn btn--primary btn--sm add-book-to-tree" type="button">
+                {% if book.library_source == "imported" %}Add to Tree{% else %}Move in Tree{% endif %}
+              </button>
+            </div>
           </div>
         </div>
       </article>

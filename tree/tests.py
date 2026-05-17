@@ -258,7 +258,7 @@ class GoodreadsImportTests(TestCase):
         self.assertFalse(Node.objects.filter(user=self.user, title='Dune').exists())
         self.assertEqual(Node.objects.filter(user=self.user, title='Beloved').count(), 1)
 
-    def test_tree_mutations_create_restorable_versions(self):
+    def test_save_tree_creates_restorable_version(self):
         response = self.client.post(
             reverse('tree:api-node-list'),
             data=json.dumps({
@@ -271,6 +271,14 @@ class GoodreadsImportTests(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         node_id = response.json()['id']
+        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 0)
+
+        response = self.client.post(
+            reverse('tree:api-tree-version-create'),
+            data=json.dumps({'label': 'Before title edit'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
         self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 1)
 
         response = self.client.patch(
@@ -279,9 +287,33 @@ class GoodreadsImportTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 2)
+        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 1)
 
         first_version = TreeVersion.objects.filter(user=self.user).order_by('created_at').first()
         response = self.client.post(reverse('tree:api-tree-version-restore', args=[first_version.id]))
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Node.objects.filter(user=self.user, title='Dune Messiah').exists())
+
+    def test_imported_book_can_be_added_under_tree_parent(self):
+        parent = Node.objects.create(
+            user=self.user,
+            title='Science Fiction',
+            node_type='genre',
+        )
+        imported_book = ImportedBook.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            shelf=Node.SHELF_WANT_TO_READ,
+        )
+
+        response = self.client.post(
+            reverse('tree:api-imported-book-add-to-tree', args=[imported_book.id]),
+            data=json.dumps({'parent': str(parent.id)}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        node = Node.objects.get(user=self.user, title='Dune')
+        self.assertEqual(node.parent, parent)

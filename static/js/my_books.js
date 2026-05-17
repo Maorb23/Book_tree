@@ -261,6 +261,41 @@
     });
   });
 
+  document.querySelectorAll('.add-book-to-tree').forEach(button => {
+    button.addEventListener('click', async () => {
+      const card = button.closest('.library-book');
+      if (!card) return;
+      const parent = card.querySelector('.tree-parent-select')?.value || null;
+      const isImported = card.dataset.source === 'imported';
+      const endpoint = isImported
+        ? `/api/imported-books/${card.dataset.id}/add-to-tree/`
+        : `/api/nodes/${card.dataset.id}/`;
+
+      button.disabled = true;
+      button.textContent = isImported ? 'Adding...' : 'Moving...';
+      try {
+        const res = await fetch(endpoint, {
+          method: isImported ? 'POST' : 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({ parent, pos_x: null, pos_y: null }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = data.parent?.[0] || data.detail || 'Could not update the tree.';
+          throw new Error(message);
+        }
+        if (data.id) card.dataset.id = data.id;
+        card.dataset.source = 'tree';
+        showToast(isImported ? 'Book added to your tree.' : 'Book moved in your tree.');
+      } catch (error) {
+        showToast(error.message || 'Could not update the tree.');
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Move in Tree';
+      }
+    });
+  });
+
   syncShelfTabs();
   applyFilters();
 })();

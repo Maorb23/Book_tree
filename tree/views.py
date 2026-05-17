@@ -95,6 +95,7 @@ def my_books(request):
     ]
     return render(request, 'my_books.html', {
         'books': books,
+        'tree_parent_options': tree_books,
         'shelf_choices': Node.SHELF_CHOICES,
         'shelf_counts': shelf_counts,
         'custom_shelves': custom_shelves,
@@ -551,7 +552,6 @@ def node_list(request):
 
     serializer = NodeSerializer(data=request.data)
     if serializer.is_valid():
-        _create_tree_version(request.user, 'Before adding a tree node', 'node_create')
         node = serializer.save(user=request.user)
         # Auto-fetch cover if not supplied
         if not node.cover_image and node.isbn:
@@ -584,13 +584,11 @@ def node_detail(request, pk):
                                     partial=(request.method == 'PATCH'),
                                     context={'request': request})
         if serializer.is_valid():
-            _create_tree_version(request.user, f'Before editing {node.title}', 'node_update')
             serializer.save()
             _invalidate_tree_cache(request.user.id)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    _create_tree_version(request.user, f'Before deleting {node.title}', 'node_delete')
     node.delete()
     _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -633,7 +631,6 @@ def edge_list(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        _create_tree_version(request.user, 'Before adding a tree connection', 'edge_create')
         edge = serializer.save(user=request.user)
         _invalidate_tree_cache(request.user.id)
         return Response(EdgeSerializer(edge).data, status=status.HTTP_201_CREATED)
@@ -649,13 +646,11 @@ def edge_detail(request, pk):
     if request.method == 'PATCH':
         serializer = EdgeSerializer(edge, data=request.data, partial=True)
         if serializer.is_valid():
-            _create_tree_version(request.user, 'Before editing a tree connection', 'edge_update')
             saved = serializer.save()
             _invalidate_tree_cache(request.user.id)
             return Response(EdgeSerializer(saved).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    _create_tree_version(request.user, 'Before deleting a tree connection', 'edge_delete')
     edge.delete()
     _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -670,6 +665,16 @@ def _invalidate_tree_cache(user_id):
 def tree_version_list(request):
     versions = TreeVersion.objects.filter(user=request.user)[:20]
     return Response(TreeVersionSerializer(versions, many=True).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def tree_version_create(request):
+    label = (request.data.get('label') or '').strip()[:180]
+    if not label:
+        label = 'Saved tree version'
+    version = _create_tree_version(request.user, label, 'manual_save')
+    return Response(TreeVersionSerializer(version).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
@@ -698,9 +703,55 @@ def imported_book_detail(request, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def imported_book_add_to_tree(request, pk):
+    imported_book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=pk)
+    parent_id = request.data.get('parent') or None
+    parent = None
+    if parent_id:
+        parent = get_object_or_404(Node.objects.filter(user=request.user), pk=parent_id)
+
+    existing_node = _find_existing_tree_book(request.user, {
+        'title': imported_book.title,
+        'author': imported_book.author,
+        'isbn': imported_book.isbn,
+    })
+    if existing_node:
+        serializer = NodeSerializer(
+            existing_node,
+            data={'parent': str(parent.id) if parent else None, 'pos_x': None, 'pos_y': None},
+            partial=True,
+            context={'request': request},
+        )
+        if serializer.is_valid():
+            saved = serializer.save()
+            _invalidate_tree_cache(request.user.id)
+            return Response(NodeSerializer(saved, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    node = Node.objects.create(
+        user=request.user,
+        node_type='book',
+        title=imported_book.title,
+        author=imported_book.author,
+        year=imported_book.year,
+        rating=imported_book.rating,
+        isbn=imported_book.isbn,
+        cover_image=imported_book.cover_image,
+        parent=parent,
+        shelf=imported_book.shelf,
+        custom_shelf=imported_book.custom_shelf,
+        date_read=imported_book.date_read,
+        notes=imported_book.notes,
+    )
+    _invalidate_tree_cache(request.user.id)
+    return Response(NodeSerializer(node, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
 def _create_tree_version(user, label, reason='manual'):
     snapshot = _build_tree_snapshot(user)
-    TreeVersion.objects.create(
+    return TreeVersion.objects.create(
         user=user,
         label=label,
         reason=reason,
@@ -953,6 +1004,11 @@ def _find_existing_book(user, book):
     imported_existing = _find_existing_imported_book(user, book)
     if imported_existing:
         return imported_existing
+
+    return _find_existing_tree_book(user, book)
+
+
+def _find_existing_tree_book(user, book):
 
     isbn = _normalize_goodreads_isbn(book.get('isbn'))
     if isbn:

@@ -486,6 +486,7 @@
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
       <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
       <button class="btn btn--ghost" id="treeVersionsBtn" type="button">Versions</button>
+      <button class="btn btn--ghost" id="saveTreeBtn" type="button">Save Tree</button>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
     </div>
   </nav>
@@ -815,6 +816,121 @@
     }
 
     window.showToast = showToast;
+
+    let treeHasUnsavedVersion = false;
+
+    function markTreeDirty() {
+      treeHasUnsavedVersion = true;
+      const saveBtn = document.getElementById('saveTreeBtn');
+      if (saveBtn) saveBtn.textContent = 'Save Tree *';
+    }
+
+    function clearTreeDirty() {
+      treeHasUnsavedVersion = false;
+      const saveBtn = document.getElementById('saveTreeBtn');
+      if (saveBtn) saveBtn.textContent = 'Save Tree';
+    }
+
+    async function saveTreeVersion() {
+      const label = `Saved tree - ${new Date().toLocaleString()}`;
+      const res = await fetch('/api/tree/versions/save/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ label }),
+      });
+      if (!res.ok) throw new Error('Could not save tree version');
+      clearTreeDirty();
+      showToast('Tree version saved.', 'success');
+    }
+
+    async function promptTreeNavigation(targetUrl) {
+      return new Promise((resolve) => {
+        const existing = document.querySelector('.app-confirm');
+        if (existing) existing.remove();
+
+        const modalEl = document.createElement('div');
+        modalEl.className = 'app-confirm';
+        modalEl.setAttribute('role', 'dialog');
+        modalEl.setAttribute('aria-modal', 'true');
+        modalEl.innerHTML = `
+          <div class="app-confirm__dialog">
+            <div class="app-confirm__card">
+              <div class="app-confirm__header">
+                <h5 class="app-confirm__title">Save tree version?</h5>
+                <button type="button" class="app-confirm__x" data-role="cancel" aria-label="Close">x</button>
+              </div>
+              <div class="app-confirm__body">Your tree has changes that have not been saved as a version.</div>
+              <div class="app-confirm__footer">
+                <button type="button" class="btn btn--ghost" data-role="cancel">Cancel</button>
+                <button type="button" class="btn btn--ghost" data-role="leave">Don't Save</button>
+                <button type="button" class="btn btn--primary" data-role="save">Save</button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modalEl);
+        document.body.classList.add('confirm-open');
+
+        const finish = (action) => {
+          modalEl.remove();
+          document.body.classList.remove('confirm-open');
+          resolve(action);
+        };
+
+        modalEl.querySelector('[data-role="save"]').addEventListener('click', async () => {
+          const saveButton = modalEl.querySelector('[data-role="save"]');
+          saveButton.disabled = true;
+          saveButton.textContent = 'Saving...';
+          try {
+            await saveTreeVersion();
+            finish('save');
+            window.location.href = targetUrl;
+          } catch (_) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Save';
+            showToast('Could not save this tree version.', 'error');
+          }
+        });
+        modalEl.querySelector('[data-role="leave"]').addEventListener('click', () => {
+          clearTreeDirty();
+          finish('leave');
+          window.location.href = targetUrl;
+        });
+        modalEl.querySelectorAll('[data-role="cancel"]').forEach(el => {
+          el.addEventListener('click', () => finish('cancel'));
+        });
+      });
+    }
+
+    document.getElementById('saveTreeBtn')?.addEventListener('click', async () => {
+      const saveBtn = document.getElementById('saveTreeBtn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+      try {
+        await saveTreeVersion();
+      } catch (_) {
+        showToast('Could not save this tree version.', 'error');
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = treeHasUnsavedVersion ? 'Save Tree *' : 'Save Tree';
+      }
+    });
+
+    window.addEventListener('beforeunload', (event) => {
+      if (!treeHasUnsavedVersion) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+
+    document.addEventListener('click', (event) => {
+      const link = event.target.closest('a[href]');
+      if (!link || !treeHasUnsavedVersion) return;
+      const target = link.getAttribute('target');
+      const href = link.href;
+      if (!href || target === '_blank' || href.startsWith('javascript:')) return;
+      event.preventDefault();
+      promptTreeNavigation(href);
+    });
 
     function confirmAction(message, title = 'Please confirm') {
       return new Promise((resolve) => {
@@ -2169,6 +2285,7 @@
         if (node) {
           node.parent = parentId;
           renderTreeInstant();
+          markTreeDirty();
         }
         document.getElementById('sidebar').classList.remove('open');
         showToast('Parent updated instantly.', 'success');
@@ -2197,10 +2314,12 @@
           localNode.pos_x = payload.pos_x;
           localNode.pos_y = payload.pos_y;
           renderTreeInstant();
+          markTreeDirty();
         } else {
           buildLayout();
           renderTree();
           updateMinimap();
+          markTreeDirty();
         }
       } catch (_) {
         showToast('Network error while moving branch.', 'error');
@@ -2222,6 +2341,7 @@
         if (localNode) {
           localNode.parent = null;
           renderTreeInstant();
+          markTreeDirty();
         }
         showToast('Node promoted to main branch.', 'success');
       } catch (_) {
@@ -2252,6 +2372,7 @@
       window.nodeMap = nodeMap;
       syncTreeEmptyState();
       renderTreeInstant();
+      markTreeDirty();
       return nodeMap[node.id];
     }
 
@@ -2272,6 +2393,7 @@
       window.nodeMap = nodeMap;
       syncTreeEmptyState();
       renderTreeInstant();
+      markTreeDirty();
     }
 
     function upsertTreeEdge(rawEdge) {
@@ -2283,6 +2405,7 @@
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
       renderTreeInstant();
+      markTreeDirty();
     }
 
     function removeTreeEdge(edgeId) {
@@ -2291,6 +2414,7 @@
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
       renderTreeInstant();
+      markTreeDirty();
     }
 
     function wrapText(text, maxWidth, fontSize) {
