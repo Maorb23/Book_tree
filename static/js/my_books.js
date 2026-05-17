@@ -237,7 +237,10 @@
       button.disabled = true;
       button.textContent = 'Saving...';
       try {
-        const res = await fetch(`/api/nodes/${card.dataset.id}/`, {
+        const endpoint = card.dataset.source === 'imported'
+          ? `/api/imported-books/${card.dataset.id}/`
+          : `/api/nodes/${card.dataset.id}/`;
+        const res = await fetch(endpoint, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
           body: JSON.stringify({ shelf, custom_shelf: customShelf }),

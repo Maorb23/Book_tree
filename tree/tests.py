@@ -7,9 +7,10 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
 from unittest.mock import patch
+import json
 
 from .email_backends import ResendEmailBackend
-from .models import FriendRequest, Friendship, CommunityPost, Node
+from .models import FriendRequest, Friendship, CommunityPost, Node, ImportedBook, TreeVersion
 from .views import _apply_known_book_metadata
 from book_tree.settings import _email_env
 
@@ -229,7 +230,7 @@ class GoodreadsImportTests(TestCase):
 
         response = self.client.post(
             reverse('tree:api-goodreads-import'),
-            data={
+            data=json.dumps({
                 'books': [
                     {
                         'title': 'Beloved',
@@ -245,7 +246,7 @@ class GoodreadsImportTests(TestCase):
                         'shelf': Node.SHELF_WANT_TO_READ,
                     },
                 ],
-            },
+            }),
             content_type='application/json',
         )
 
@@ -253,5 +254,34 @@ class GoodreadsImportTests(TestCase):
         payload = response.json()
         self.assertEqual(payload['created_count'], 1)
         self.assertEqual(payload['skipped_count'], 1)
-        self.assertTrue(Node.objects.filter(user=self.user, title='Dune').exists())
+        self.assertTrue(ImportedBook.objects.filter(user=self.user, title='Dune').exists())
+        self.assertFalse(Node.objects.filter(user=self.user, title='Dune').exists())
         self.assertEqual(Node.objects.filter(user=self.user, title='Beloved').count(), 1)
+
+    def test_tree_mutations_create_restorable_versions(self):
+        response = self.client.post(
+            reverse('tree:api-node-list'),
+            data=json.dumps({
+                'title': 'Dune',
+                'author': 'Frank Herbert',
+                'node_type': 'book',
+                'isbn': '9780441172719',
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        node_id = response.json()['id']
+        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 1)
+
+        response = self.client.patch(
+            reverse('tree:api-node-detail', args=[node_id]),
+            data=json.dumps({'title': 'Dune Messiah'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 2)
+
+        first_version = TreeVersion.objects.filter(user=self.user).order_by('created_at').first()
+        response = self.client.post(reverse('tree:api-tree-version-restore', args=[first_version.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Node.objects.filter(user=self.user, title='Dune Messiah').exists())

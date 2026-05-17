@@ -2,6 +2,9 @@ import requests
 import logging
 import csv
 import io
+import uuid
+from itertools import chain
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
@@ -33,8 +36,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Node, Edge, FriendRequest, Friendship, CommunityPost
-from .serializers import NodeSerializer, EdgeSerializer
+from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, TreeVersion
+from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeVersionSerializer
 from .forms import EmailUserCreationForm
 
 
@@ -71,20 +74,25 @@ def tree_page(request):
 
 @login_required
 def my_books(request):
-    books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
-    shelf_counts = {
-        'all': books.count(),
-        Node.SHELF_WANT_TO_READ: books.filter(shelf=Node.SHELF_WANT_TO_READ).count(),
-        Node.SHELF_CURRENTLY_READING: books.filter(shelf=Node.SHELF_CURRENTLY_READING).count(),
-        Node.SHELF_READ: books.filter(shelf=Node.SHELF_READ).count(),
-        Node.SHELF_DID_NOT_FINISH: books.filter(shelf=Node.SHELF_DID_NOT_FINISH).count(),
-    }
-    custom_shelves = (
-        books.exclude(custom_shelf='')
-        .values('custom_shelf')
-        .annotate(total=Count('id'))
-        .order_by('custom_shelf')
+    tree_books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
+    imported_books = ImportedBook.objects.filter(user=request.user).order_by('title')
+    books = sorted(
+        chain(tree_books, imported_books),
+        key=lambda book: (book.title or '').lower(),
     )
+    shelf_counter = Counter(book.shelf for book in books)
+    shelf_counts = {
+        'all': len(books),
+        Node.SHELF_WANT_TO_READ: shelf_counter[Node.SHELF_WANT_TO_READ],
+        Node.SHELF_CURRENTLY_READING: shelf_counter[Node.SHELF_CURRENTLY_READING],
+        Node.SHELF_READ: shelf_counter[Node.SHELF_READ],
+        Node.SHELF_DID_NOT_FINISH: shelf_counter[Node.SHELF_DID_NOT_FINISH],
+    }
+    custom_counts = Counter(book.custom_shelf for book in books if book.custom_shelf)
+    custom_shelves = [
+        {'custom_shelf': name, 'total': total}
+        for name, total in sorted(custom_counts.items(), key=lambda item: item[0].lower())
+    ]
     return render(request, 'my_books.html', {
         'books': books,
         'shelf_choices': Node.SHELF_CHOICES,
@@ -543,6 +551,7 @@ def node_list(request):
 
     serializer = NodeSerializer(data=request.data)
     if serializer.is_valid():
+        _create_tree_version(request.user, 'Before adding a tree node', 'node_create')
         node = serializer.save(user=request.user)
         # Auto-fetch cover if not supplied
         if not node.cover_image and node.isbn:
@@ -575,11 +584,13 @@ def node_detail(request, pk):
                                     partial=(request.method == 'PATCH'),
                                     context={'request': request})
         if serializer.is_valid():
+            _create_tree_version(request.user, f'Before editing {node.title}', 'node_update')
             serializer.save()
             _invalidate_tree_cache(request.user.id)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    _create_tree_version(request.user, f'Before deleting {node.title}', 'node_delete')
     node.delete()
     _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -622,6 +633,7 @@ def edge_list(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        _create_tree_version(request.user, 'Before adding a tree connection', 'edge_create')
         edge = serializer.save(user=request.user)
         _invalidate_tree_cache(request.user.id)
         return Response(EdgeSerializer(edge).data, status=status.HTTP_201_CREATED)
@@ -637,11 +649,13 @@ def edge_detail(request, pk):
     if request.method == 'PATCH':
         serializer = EdgeSerializer(edge, data=request.data, partial=True)
         if serializer.is_valid():
+            _create_tree_version(request.user, 'Before editing a tree connection', 'edge_update')
             saved = serializer.save()
             _invalidate_tree_cache(request.user.id)
             return Response(EdgeSerializer(saved).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    _create_tree_version(request.user, 'Before deleting a tree connection', 'edge_delete')
     edge.delete()
     _invalidate_tree_cache(request.user.id)
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -649,6 +663,151 @@ def edge_detail(request, pk):
 
 def _invalidate_tree_cache(user_id):
     cache.delete(f'tree-data:v1:user:{user_id}')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def tree_version_list(request):
+    versions = TreeVersion.objects.filter(user=request.user)[:20]
+    return Response(TreeVersionSerializer(versions, many=True).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def tree_version_restore(request, version_id):
+    version = get_object_or_404(TreeVersion, pk=version_id, user=request.user)
+    _create_tree_version(request.user, 'Before restoring tree version', 'restore')
+    _restore_tree_snapshot(request.user, version.snapshot or {})
+    _invalidate_tree_cache(request.user.id)
+    return Response({'detail': 'Tree version restored.'})
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def imported_book_detail(request, pk):
+    imported_book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=pk)
+
+    if request.method == 'PATCH':
+        serializer = ImportedBookSerializer(imported_book, data=request.data, partial=True)
+        if serializer.is_valid():
+            saved = serializer.save()
+            return Response(ImportedBookSerializer(saved).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    imported_book.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _create_tree_version(user, label, reason='manual'):
+    snapshot = _build_tree_snapshot(user)
+    TreeVersion.objects.create(
+        user=user,
+        label=label,
+        reason=reason,
+        snapshot=snapshot,
+    )
+
+
+def _build_tree_snapshot(user):
+    nodes = Node.objects.filter(user=user).order_by('date_added')
+    edges = Edge.objects.filter(user=user).order_by('id')
+    return {
+        'nodes': [
+            {
+                'id': str(node.id),
+                'title': node.title,
+                'node_type': node.node_type,
+                'author': node.author,
+                'genre': node.genre,
+                'series': node.series,
+                'year': node.year,
+                'description': node.description,
+                'rating': node.rating,
+                'isbn': node.isbn,
+                'cover_image': node.cover_image,
+                'parent': str(node.parent_id) if node.parent_id else None,
+                'pos_x': node.pos_x,
+                'pos_y': node.pos_y,
+                'style': node.style,
+                'date_read': node.date_read.isoformat() if node.date_read else None,
+                'shelf': node.shelf,
+                'custom_shelf': node.custom_shelf,
+                'badges': node.badges,
+                'notes': node.notes,
+            }
+            for node in nodes
+        ],
+        'edges': [
+            {
+                'id': str(edge.id),
+                'source': str(edge.source_id),
+                'target': str(edge.target_id),
+                'edge_type': edge.edge_type,
+                'label': edge.label,
+                'style': edge.style,
+            }
+            for edge in edges
+        ],
+    }
+
+
+def _restore_tree_snapshot(user, snapshot):
+    from datetime import date
+
+    node_rows = snapshot.get('nodes') or []
+    edge_rows = snapshot.get('edges') or []
+
+    Edge.objects.filter(user=user).delete()
+    Node.objects.filter(user=user).delete()
+
+    created_nodes = {}
+    for row in node_rows:
+        node_id = uuid.UUID(row['id'])
+        node = Node.objects.create(
+            id=node_id,
+            user=user,
+            title=row.get('title') or 'Untitled',
+            node_type=row.get('node_type') or 'book',
+            author=row.get('author') or '',
+            genre=row.get('genre') or '',
+            series=row.get('series') or '',
+            year=row.get('year'),
+            description=row.get('description') or '',
+            rating=row.get('rating'),
+            isbn=row.get('isbn') or '',
+            cover_image=row.get('cover_image') or '',
+            pos_x=row.get('pos_x'),
+            pos_y=row.get('pos_y'),
+            style=row.get('style') or {},
+            date_read=date.fromisoformat(row['date_read']) if row.get('date_read') else None,
+            shelf=row.get('shelf') or Node.SHELF_WANT_TO_READ,
+            custom_shelf=row.get('custom_shelf') or '',
+            badges=row.get('badges') or [],
+            notes=row.get('notes') or '',
+        )
+        created_nodes[str(node_id)] = node
+
+    for row in node_rows:
+        parent_id = row.get('parent')
+        node = created_nodes.get(row.get('id'))
+        if node and parent_id and parent_id in created_nodes:
+            node.parent = created_nodes[parent_id]
+            node.save(update_fields=['parent'])
+
+    for row in edge_rows:
+        source = created_nodes.get(row.get('source'))
+        target = created_nodes.get(row.get('target'))
+        if not source or not target:
+            continue
+        Edge.objects.create(
+            id=uuid.UUID(row['id']),
+            user=user,
+            source=source,
+            target=target,
+            edge_type=row.get('edge_type') or 'custom',
+            label=row.get('label') or '',
+            style=row.get('style') or {},
+        )
 
 
 @api_view(['POST'])
@@ -701,9 +860,10 @@ def goodreads_import_confirm(request):
                 })
                 continue
 
-            node = Node.objects.create(
+            imported_book = ImportedBook.objects.create(
                 user=request.user,
-                node_type='book',
+                source=ImportedBook.SOURCE_GOODREADS,
+                source_key=book.get('source_key', ''),
                 title=book['title'],
                 author=book.get('author', ''),
                 year=book.get('year'),
@@ -715,10 +875,7 @@ def goodreads_import_confirm(request):
                 date_read=book.get('date_read'),
                 notes=book.get('notes', ''),
             )
-            created.append(NodeSerializer(node, context={'request': request}).data)
-
-    if created:
-        _invalidate_tree_cache(request.user.id)
+            created.append(ImportedBookSerializer(imported_book).data)
 
     return Response({
         'created_count': len(created),
@@ -750,6 +907,7 @@ def _goodreads_row_to_book(row):
     review = _csv_value(row, 'My Review')
 
     return {
+        'source_key': _csv_value(row, 'Book Id') or isbn,
         'title': title,
         'author': author,
         'isbn': isbn,
@@ -778,6 +936,7 @@ def _clean_import_payload(raw_book):
     shelf = raw_book.get('shelf') if raw_book.get('shelf') in valid_shelves else Node.SHELF_WANT_TO_READ
     return {
         'title': str(raw_book.get('title') or '').strip()[:255],
+        'source_key': str(raw_book.get('source_key') or '').strip()[:160],
         'author': str(raw_book.get('author') or '').strip()[:255],
         'isbn': _normalize_goodreads_isbn(raw_book.get('isbn'))[:20],
         'year': _safe_int(raw_book.get('year')),
@@ -791,6 +950,10 @@ def _clean_import_payload(raw_book):
 
 
 def _find_existing_book(user, book):
+    imported_existing = _find_existing_imported_book(user, book)
+    if imported_existing:
+        return imported_existing
+
     isbn = _normalize_goodreads_isbn(book.get('isbn'))
     if isbn:
         existing = Node.objects.filter(user=user, node_type='book', isbn=isbn).first()
@@ -803,6 +966,35 @@ def _find_existing_book(user, book):
         return None
 
     candidates = Node.objects.filter(user=user, node_type='book', title__iexact=str(book.get('title') or '').strip())
+    for candidate in candidates:
+        if _normalize_text(candidate.title) == title and _normalize_text(candidate.author) == author:
+            return candidate
+    return None
+
+
+def _find_existing_imported_book(user, book):
+    source_key = str(book.get('source_key') or '').strip()
+    if source_key:
+        existing = ImportedBook.objects.filter(
+            user=user,
+            source=ImportedBook.SOURCE_GOODREADS,
+            source_key=source_key,
+        ).first()
+        if existing:
+            return existing
+
+    isbn = _normalize_goodreads_isbn(book.get('isbn'))
+    if isbn:
+        existing = ImportedBook.objects.filter(user=user, isbn=isbn).first()
+        if existing:
+            return existing
+
+    title = _normalize_text(book.get('title'))
+    author = _normalize_text(book.get('author'))
+    if not title:
+        return None
+
+    candidates = ImportedBook.objects.filter(user=user, title__iexact=str(book.get('title') or '').strip())
     for candidate in candidates:
         if _normalize_text(candidate.title) == title and _normalize_text(candidate.author) == author:
             return candidate

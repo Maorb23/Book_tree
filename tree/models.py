@@ -83,6 +83,66 @@ class Node(models.Model):
             return self.cover_image
         return None
 
+    @property
+    def library_source(self):
+        return "tree"
+
+
+class ImportedBook(models.Model):
+    SOURCE_GOODREADS = "goodreads"
+    SOURCE_CHOICES = [
+        (SOURCE_GOODREADS, "Goodreads"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='imported_books')
+    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default=SOURCE_GOODREADS)
+    source_key = models.CharField(max_length=160, blank=True)
+    title = models.CharField(max_length=255)
+    author = models.CharField(max_length=255, blank=True)
+    year = models.IntegerField(null=True, blank=True)
+    rating = models.FloatField(null=True, blank=True)
+    isbn = models.CharField(max_length=20, blank=True)
+    cover_image = models.URLField(max_length=1000, blank=True)
+    date_added = models.DateTimeField(auto_now_add=True)
+    date_read = models.DateField(null=True, blank=True)
+    shelf = models.CharField(max_length=32, choices=Node.SHELF_CHOICES, default=Node.SHELF_WANT_TO_READ)
+    custom_shelf = models.CharField(max_length=80, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['date_added']
+        indexes = [
+            models.Index(fields=['user', 'source', 'date_added'], name='import_book_user_src_idx'),
+            models.Index(fields=['user', 'isbn'], name='import_book_user_isbn_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.source})"
+
+    def get_cover_url(self):
+        return self.cover_image or None
+
+    @property
+    def library_source(self):
+        return "imported"
+
+
+class TreeVersion(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tree_versions')
+    label = models.CharField(max_length=180)
+    reason = models.CharField(max_length=80, blank=True)
+    snapshot = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at'], name='tree_version_user_date_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.label}"
+
 
 class Edge(models.Model):
     """Explicit relationship between two nodes."""

@@ -366,6 +366,23 @@
     .connection-style-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
     .connection-row-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+    .version-panel {
+      position: fixed; left: 16px; top: 84px; z-index: 160; width: min(360px, calc(100vw - 32px));
+      max-height: calc(100vh - 110px); overflow-y: auto; display: none;
+      background: rgba(13, 17, 12, 0.96); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;
+    }
+    .version-panel.open { display: block; }
+    .version-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .version-panel__head h3 { font-family: var(--font-serif); font-size: 1.1rem; }
+    .version-list { display: grid; gap: 10px; }
+    .version-card {
+      border: 1px solid rgba(190, 160, 120, 0.24); border-radius: 10px;
+      background: rgba(22, 31, 23, 0.72); padding: 10px; display: grid; gap: 8px;
+    }
+    .version-card strong { color: var(--text-light); }
+    .version-card span { color: var(--text-muted); font-size: 0.82rem; }
+
     #toastHost {
       position: fixed; right: 16px; top: 16px; z-index: 1400;
       display: flex; flex-direction: column; gap: 10px; pointer-events: none;
@@ -428,6 +445,7 @@
       .nav__user { flex: 0 0 auto; }
       .nav__search { max-width: none; }
       .canvas-wrap { top: 156px; }
+      .version-panel { top: 172px; }
       .minimap { width: 128px; bottom: 12px; right: 12px; }
       #minimapSvg { height: 90px; }
       .minimap__header { padding: 5px 8px; font-size: 0.62rem; }
@@ -467,6 +485,7 @@
       <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
       <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
+      <button class="btn btn--ghost" id="treeVersionsBtn" type="button">Versions</button>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
     </div>
   </nav>
@@ -704,6 +723,16 @@
     <button class="sidebar__close" id="closeSidebar">✕</button>
     <div id="sidebarContent"></div>
   </div>
+
+  <aside class="version-panel" id="treeVersionPanel" aria-label="Tree versions">
+    <div class="version-panel__head">
+      <h3>Tree Versions</h3>
+      <button class="btn btn--ghost btn--sm" id="closeTreeVersions" type="button">Close</button>
+    </div>
+    <div class="version-list" id="treeVersionList">
+      <div class="version-card"><span>No versions loaded yet.</span></div>
+    </div>
+  </aside>
 
   <div id="toastHost" aria-live="polite" aria-atomic="true"></div>
 
@@ -2807,6 +2836,69 @@
         const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
         return cookie ? cookie.split('=')[1] : '';
       }
+
+      const treeVersionPanel = document.getElementById('treeVersionPanel');
+      const treeVersionList = document.getElementById('treeVersionList');
+
+      function formatVersionDate(value) {
+        try { return new Date(value).toLocaleString(); }
+        catch (_) { return value || ''; }
+      }
+
+      async function loadTreeVersions() {
+        if (!treeVersionList) return;
+        treeVersionList.innerHTML = '<div class="version-card"><span>Loading versions...</span></div>';
+        try {
+          const res = await fetch('/api/tree/versions/');
+          if (!res.ok) throw new Error('Could not load versions');
+          const versions = await res.json();
+          if (!versions.length) {
+            treeVersionList.innerHTML = '<div class="version-card"><span>No tree versions yet. Versions are created automatically before tree edits.</span></div>';
+            return;
+          }
+          treeVersionList.innerHTML = versions.map(version => `
+            <article class="version-card">
+              <strong>${escapeHtml(version.label || 'Tree version')}</strong>
+              <span>${escapeHtml(formatVersionDate(version.created_at))} - ${version.node_count} nodes, ${version.edge_count} links</span>
+              <button class="btn btn--ghost btn--sm" type="button" data-version-id="${version.id}">Restore this version</button>
+            </article>
+          `).join('');
+        } catch (_) {
+          treeVersionList.innerHTML = '<div class="version-card"><span>Could not load tree versions.</span></div>';
+        }
+      }
+
+      document.getElementById('treeVersionsBtn')?.addEventListener('click', async () => {
+        treeVersionPanel?.classList.add('open');
+        await loadTreeVersions();
+      });
+
+      document.getElementById('closeTreeVersions')?.addEventListener('click', () => {
+        treeVersionPanel?.classList.remove('open');
+      });
+
+      treeVersionList?.addEventListener('click', async event => {
+        const button = event.target.closest('[data-version-id]');
+        if (!button) return;
+        const ok = window.confirm('Restore this tree version? Your current tree will be saved as a version first.');
+        if (!ok) return;
+        button.disabled = true;
+        button.textContent = 'Restoring...';
+        try {
+          const res = await fetch(`/api/tree/versions/${button.dataset.versionId}/restore/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCsrf() },
+          });
+          if (!res.ok) throw new Error('Restore failed');
+          notify('Tree version restored.', 'success');
+          treeVersionPanel?.classList.remove('open');
+          if (typeof window.loadTree === 'function') await window.loadTree();
+        } catch (_) {
+          notify('Could not restore this tree version.', 'error');
+          button.disabled = false;
+          button.textContent = 'Restore this version';
+        }
+      });
 
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {

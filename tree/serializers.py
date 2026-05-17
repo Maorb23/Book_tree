@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q
-from .models import Node, Edge, FriendRequest, Friendship, CommunityPost
+from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, TreeVersion
 
 
 class NodeSerializer(serializers.ModelSerializer):
@@ -66,6 +66,36 @@ class EdgeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Edge
         fields = ['id', 'source', 'target', 'edge_type', 'label', 'style']
+
+
+class ImportedBookSerializer(serializers.ModelSerializer):
+    cover_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ImportedBook
+        fields = [
+            'id', 'source', 'source_key', 'title', 'author', 'year', 'rating',
+            'isbn', 'cover_image', 'cover_url', 'date_added', 'date_read',
+            'shelf', 'custom_shelf', 'notes',
+        ]
+
+    def get_cover_url(self, obj):
+        return obj.get_cover_url()
+
+
+class TreeVersionSerializer(serializers.ModelSerializer):
+    node_count = serializers.SerializerMethodField()
+    edge_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TreeVersion
+        fields = ['id', 'label', 'reason', 'created_at', 'node_count', 'edge_count']
+
+    def get_node_count(self, obj):
+        return len((obj.snapshot or {}).get('nodes') or [])
+
+    def get_edge_count(self, obj):
+        return len((obj.snapshot or {}).get('edges') or [])
 
 
 class TreeDataSerializer(serializers.Serializer):
