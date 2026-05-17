@@ -4,23 +4,26 @@
 
   // ── Floating book particles in hero ──
   const COLORS = ['#1c2a1d','#2d3a2b','#3a2f24','#2a1d14','#1f2418','#2f3a28'];
-  const TITLES = ['Dune','1984','Hobbit','Mistborn','Foundation','Gatsby','Neuromancer'];
   const container = document.getElementById('heroBooks');
 
   if (container) {
-    TITLES.forEach((_, i) => {
-      const el = document.createElement('div');
-      el.className = 'hero-book hero-book--leaf';
-      const rot = Math.random() * 20 - 10;
-      el.style.cssText = `
-      left:${Math.random() * 90}%;
-      top:${Math.random() * 80 + 5}%;
-      --leaf-color:${COLORS[i % COLORS.length]};
-      --rot:${rot}deg;
-      animation-delay:${Math.random() * 6}s;
-      animation-duration:${6 + Math.random() * 4}s;
-    `;
-      container.appendChild(el);
+    ['left', 'right'].forEach((side) => {
+      Array.from({ length: 7 }).forEach((_, i) => {
+        const el = document.createElement('div');
+        el.className = `hero-book hero-book--leaf hero-book--${side}`;
+        const rot = side === 'left' ? -5 : 5;
+        const driftRot = rot * -1;
+        el.style.cssText = `
+          ${side}:-20px;
+          top:${i * 82 - 8}px;
+          --leaf-color:${COLORS[(i + (side === 'right' ? 2 : 0)) % COLORS.length]};
+          --rot:${rot}deg;
+          --drift-rot:${driftRot}deg;
+          animation-delay:${i * 0.22}s;
+          animation-duration:${7 + (i % 3)}s;
+        `;
+        container.appendChild(el);
+      });
     });
   }
 

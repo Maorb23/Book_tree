@@ -2,13 +2,14 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
 from unittest.mock import patch
 
 from .email_backends import ResendEmailBackend
-from .models import FriendRequest, Friendship, CommunityPost
+from .models import FriendRequest, Friendship, CommunityPost, Node
 from .views import _apply_known_book_metadata
 from book_tree.settings import _email_env
 
@@ -47,6 +48,30 @@ class CommunityModelTests(TestCase):
             content='Added three sci-fi classics.',
         )
         self.assertEqual(post.user, self.user_a)
+
+    def test_owner_can_edit_and_delete_own_post(self):
+        post = CommunityPost.objects.create(
+            user=self.user_a,
+            title='Old title',
+            content='Old content',
+        )
+        self.client.force_login(self.user_a)
+
+        response = self.client.post(reverse('tree:community-edit-post', args=[post.id]), {
+            'title': 'Updated title',
+            'content': 'Updated content',
+            'progress_status': CommunityPost.STATUS_READING,
+            'visibility': CommunityPost.VISIBILITY_FRIENDS,
+        })
+
+        self.assertEqual(response.status_code, 302)
+        post.refresh_from_db()
+        self.assertEqual(post.title, 'Updated title')
+        self.assertEqual(post.visibility, CommunityPost.VISIBILITY_FRIENDS)
+
+        response = self.client.post(reverse('tree:community-delete-post', args=[post.id]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(CommunityPost.objects.filter(id=post.id).exists())
 
 
 class RegistrationVerificationTests(TestCase):
@@ -160,3 +185,73 @@ class BookSearchMetadataTests(SimpleTestCase):
 
         self.assertEqual(row['year'], '1987')
         self.assertEqual(row['isbn'], '9781400033416')
+
+
+class GoodreadsImportTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='reader', password='pass1234')
+        self.client.force_login(self.user)
+
+    def test_preview_marks_books_that_already_exist_in_tree(self):
+        Node.objects.create(
+            user=self.user,
+            title='Beloved',
+            author='Toni Morrison',
+            node_type='book',
+            isbn='9781400033416',
+        )
+        csv_body = (
+            'Book Id,Title,Author,ISBN,ISBN13,My Rating,Year Published,Original Publication Year,'
+            'Date Read,Bookshelves,Exclusive Shelf,My Review\n'
+            '1,Beloved,Toni Morrison,,9781400033416,5,2004,1987,2024/01/02,favorites,read,Excellent\n'
+            '2,Dune,Frank Herbert,,9780441172719,4,1990,1965,,sci-fi,to-read,\n'
+        )
+
+        response = self.client.post(
+            reverse('tree:api-goodreads-preview'),
+            {'csv_file': SimpleUploadedFile('goodreads.csv', csv_body.encode('utf-8'), content_type='text/csv')},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['total'], 2)
+        self.assertEqual(payload['existing_count'], 1)
+        self.assertEqual(payload['importable_count'], 1)
+
+    def test_confirm_import_skips_existing_tree_books(self):
+        Node.objects.create(
+            user=self.user,
+            title='Beloved',
+            author='Toni Morrison',
+            node_type='book',
+            isbn='9781400033416',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-goodreads-import'),
+            data={
+                'books': [
+                    {
+                        'title': 'Beloved',
+                        'author': 'Toni Morrison',
+                        'isbn': '9781400033416',
+                        'shelf': Node.SHELF_READ,
+                    },
+                    {
+                        'title': 'Dune',
+                        'author': 'Frank Herbert',
+                        'isbn': '9780441172719',
+                        'year': 1965,
+                        'shelf': Node.SHELF_WANT_TO_READ,
+                    },
+                ],
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload['created_count'], 1)
+        self.assertEqual(payload['skipped_count'], 1)
+        self.assertTrue(Node.objects.filter(user=self.user, title='Dune').exists())
+        self.assertEqual(Node.objects.filter(user=self.user, title='Beloved').count(), 1)

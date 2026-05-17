@@ -9,6 +9,8 @@ urlpatterns = [
     path('community/', views.community_feed, name='community-feed'),
     path('community/my-posts/', views.community_my_posts, name='community-my-posts'),
     path('community/new/', views.community_create_post, name='community-create-post'),
+    path('community/my-posts/<int:post_id>/edit/', views.community_edit_post, name='community-edit-post'),
+    path('community/my-posts/<int:post_id>/delete/', views.community_delete_post, name='community-delete-post'),
     path('community/people/', views.community_people, name='community-people'),
     path('community/requests/', views.community_requests, name='community-requests'),
     path('community/friends/', views.community_friends, name='community-friends'),
@@ -31,4 +33,6 @@ urlpatterns = [
     path('api/edges/<str:pk>/', views.edge_detail, name='api-edge-detail'),
     path('api/cover/', views.fetch_cover, name='api-cover'),
     path('api/book-search/', views.search_books, name='api-book-search'),
+    path('api/goodreads/preview/', views.goodreads_import_preview, name='api-goodreads-preview'),
+    path('api/goodreads/import/', views.goodreads_import_confirm, name='api-goodreads-import'),
 ]

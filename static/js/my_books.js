@@ -4,7 +4,15 @@
   const cards = Array.from(document.querySelectorAll('.library-book'));
   const search = document.getElementById('bookSearch');
   const toast = document.getElementById('shelfToast');
+  const importPanel = document.getElementById('goodreadsImport');
+  const importForm = document.getElementById('goodreadsImportForm');
+  const importSummary = document.getElementById('importSummary');
+  const importPreview = document.getElementById('importPreview');
+  const importRows = document.getElementById('importPreviewRows');
+  const confirmImport = document.getElementById('confirmGoodreadsImport');
+  const previewTitle = document.getElementById('importPreviewTitle');
   let activeFilter = 'all';
+  let previewBooks = [];
 
   function getCsrf() {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
@@ -116,6 +124,108 @@
   });
 
   search?.addEventListener('input', applyFilters);
+
+  document.getElementById('openImportBooks')?.addEventListener('click', () => {
+    if (!importPanel) return;
+    importPanel.hidden = false;
+    importPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('closeImportBooks')?.addEventListener('click', () => {
+    if (importPanel) importPanel.hidden = true;
+  });
+
+  function shelfLabel(value) {
+    return {
+      want_to_read: 'Want to Read',
+      currently_reading: 'Currently Reading',
+      read: 'Read',
+      did_not_finish: 'Did Not Finish',
+    }[value] || 'Want to Read';
+  }
+
+  function renderImportPreview(data) {
+    previewBooks = data.books || [];
+    if (!importRows || !importPreview || !confirmImport || !previewTitle) return;
+
+    previewTitle.textContent = `Preview matched books (${data.importable_count || 0} ready, ${data.existing_count || 0} already in tree)`;
+    importRows.innerHTML = previewBooks.map((book, index) => {
+      const disabled = book.exists ? 'disabled' : '';
+      const checked = book.exists ? '' : 'checked';
+      const meta = [book.author, book.year].filter(Boolean).map(escapeHtml).join(' · ');
+      return `
+        <tr class="${book.exists ? 'is-existing' : ''}">
+          <td><input type="checkbox" data-import-index="${index}" ${checked} ${disabled} aria-label="Import ${escapeHtml(book.title)}"></td>
+          <td>
+            <strong>${escapeHtml(book.title)}</strong>
+            <span>${meta || 'Unknown author'}</span>
+          </td>
+          <td>${escapeHtml(shelfLabel(book.shelf))}${book.custom_shelf ? ` · ${escapeHtml(book.custom_shelf)}` : ''}</td>
+          <td><span class="import-status">${escapeHtml(book.match)}</span></td>
+        </tr>
+      `;
+    }).join('');
+    importPreview.hidden = false;
+    confirmImport.disabled = !previewBooks.some(book => !book.exists);
+  }
+
+  importForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!importSummary) return;
+    const formData = new FormData(importForm);
+    const file = formData.get('csv_file');
+    if (!file || !file.name) {
+      showToast('Choose your Goodreads CSV first.');
+      return;
+    }
+
+    importSummary.textContent = 'Reading your Goodreads export...';
+    if (confirmImport) confirmImport.disabled = true;
+
+    try {
+      const res = await fetch('/api/goodreads/preview/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCsrf() },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Preview failed');
+      importSummary.textContent = `${data.total} books found. ${data.importable_count} can be imported and ${data.existing_count} already exist in your tree.`;
+      renderImportPreview(data);
+    } catch (error) {
+      importSummary.textContent = error.message || 'Could not preview this file.';
+      if (importPreview) importPreview.hidden = true;
+    }
+  });
+
+  confirmImport?.addEventListener('click', async () => {
+    const selected = Array.from(document.querySelectorAll('[data-import-index]:checked'))
+      .map(input => previewBooks[Number(input.dataset.importIndex)])
+      .filter(Boolean);
+
+    if (!selected.length) {
+      showToast('Select at least one book to import.');
+      return;
+    }
+
+    confirmImport.disabled = true;
+    confirmImport.textContent = 'Importing...';
+    try {
+      const res = await fetch('/api/goodreads/import/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ books: selected }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Import failed');
+      showToast(`Imported ${data.created_count} books.`);
+      window.location.reload();
+    } catch (error) {
+      showToast(error.message || 'Could not import these books.');
+      confirmImport.disabled = false;
+      confirmImport.textContent = 'Confirm Import';
+    }
+  });
 
   document.querySelectorAll('.save-book-shelf').forEach(button => {
     button.addEventListener('click', async () => {

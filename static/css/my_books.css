@@ -142,6 +142,135 @@ body {
   font: inherit;
 }
 
+.import-card {
+  border: 1px solid rgba(157, 204, 122, 0.34);
+  background:
+    radial-gradient(520px 220px at 92% 0%, rgba(123, 191, 122, 0.14), transparent 70%),
+    rgba(9, 15, 10, 0.72);
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.import-card[hidden] {
+  display: none;
+}
+
+.import-card__head,
+.import-preview__toolbar,
+.import-upload__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.import-card h2 {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+}
+
+.import-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+  list-style-position: inside;
+  color: #c5d7c1;
+}
+
+.import-steps li {
+  border: 1px solid rgba(130, 156, 118, 0.24);
+  border-radius: 8px;
+  background: rgba(7, 12, 8, 0.5);
+  padding: 10px;
+}
+
+.import-upload {
+  display: grid;
+  gap: 8px;
+}
+
+.import-upload label,
+.import-preview__toolbar strong {
+  color: #f0f7ee;
+  font-weight: 800;
+}
+
+.import-upload input[type="file"] {
+  width: 100%;
+  border: 1px dashed rgba(157, 204, 122, 0.42);
+  background: rgba(8, 13, 9, 0.64);
+  color: #d9ead5;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.import-summary {
+  margin-top: 12px;
+  color: #b7cbb3;
+}
+
+.import-preview {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.import-preview[hidden] {
+  display: none;
+}
+
+.import-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid rgba(130, 156, 118, 0.22);
+  border-radius: 8px;
+}
+
+.import-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.import-table th,
+.import-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(130, 156, 118, 0.18);
+  text-align: left;
+  vertical-align: top;
+}
+
+.import-table th {
+  position: sticky;
+  top: 0;
+  background: #111a12;
+  color: #dcebd8;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.import-table td span {
+  display: block;
+  color: #9fb09d;
+  font-size: 0.86rem;
+  margin-top: 2px;
+}
+
+.import-table .is-existing {
+  opacity: 0.62;
+}
+
+.import-status {
+  display: inline-flex;
+  border: 1px solid rgba(130, 156, 118, 0.28);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #cfe0cc;
+}
+
 .book-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -279,5 +408,16 @@ body {
 
   .library-toolbar {
     flex-direction: column;
+  }
+
+  .import-card__head,
+  .import-preview__toolbar,
+  .import-upload__row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-steps {
+    grid-template-columns: 1fr;
   }
 }

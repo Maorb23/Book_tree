@@ -38,6 +38,13 @@
             </div>
             <span>Last updated {{ post.updated_at|date:"M d, Y" }}</span>
           </div>
+          <div class="post-actions">
+            <a class="btn btn--ghost btn--sm" href="{% url 'tree:community-edit-post' post.id %}">Edit</a>
+            <form method="post" action="{% url 'tree:community-delete-post' post.id %}" onsubmit="return confirm('Delete this post? This cannot be undone.');">
+              {% csrf_token %}
+              <button class="btn btn--danger btn--sm" type="submit">Delete</button>
+            </form>
+          </div>
         </article>
         {% endfor %}
       </section>

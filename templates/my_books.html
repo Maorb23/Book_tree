@@ -48,8 +48,52 @@
   <section class="library-panel">
     <div class="library-toolbar">
       <input type="search" id="bookSearch" placeholder="Search title, author, genre, or shelf">
+      <button class="btn btn--ghost" type="button" id="openImportBooks">Import my books</button>
       <a class="btn btn--primary" href="{% url 'tree:tree' %}">Add Books</a>
     </div>
+
+    <section class="import-card" id="goodreadsImport" hidden>
+      <div class="import-card__head">
+        <div>
+          <p class="section-kicker">Import from Goodreads</p>
+          <h2>Bring your Goodreads library into Readwoods</h2>
+        </div>
+        <button class="btn btn--ghost btn--sm" type="button" id="closeImportBooks">Close</button>
+      </div>
+      <ol class="import-steps">
+        <li>Export your Goodreads library as CSV</li>
+        <li>Upload the CSV here</li>
+        <li>Preview matched books</li>
+        <li>Confirm import</li>
+      </ol>
+      <form class="import-upload" id="goodreadsImportForm">
+        <label for="goodreadsCsv">Goodreads CSV</label>
+        <div class="import-upload__row">
+          <input id="goodreadsCsv" name="csv_file" type="file" accept=".csv,text/csv" required>
+          <button class="btn btn--primary" type="submit">Preview Books</button>
+        </div>
+      </form>
+      <div class="import-summary" id="importSummary" aria-live="polite"></div>
+      <div class="import-preview" id="importPreview" hidden>
+        <div class="import-preview__toolbar">
+          <strong id="importPreviewTitle">Preview matched books</strong>
+          <button class="btn btn--primary" type="button" id="confirmGoodreadsImport" disabled>Confirm Import</button>
+        </div>
+        <div class="import-table-wrap">
+          <table class="import-table">
+            <thead>
+              <tr>
+                <th>Import</th>
+                <th>Book</th>
+                <th>Shelf</th>
+                <th>Match</th>
+              </tr>
+            </thead>
+            <tbody id="importPreviewRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <div class="book-grid" id="bookGrid">
       {% for book in books %}

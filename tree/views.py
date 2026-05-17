@@ -1,5 +1,7 @@
 import requests
 import logging
+import csv
+import io
 from concurrent.futures import ThreadPoolExecutor
 import random
 import re
@@ -7,6 +9,7 @@ from smtplib import SMTPException
 from requests import RequestException
 from html import unescape
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db import IntegrityError
 from django.db.models import Q, Count
 from django.shortcuts import render, get_object_or_404, redirect
@@ -290,7 +293,65 @@ def community_create_post(request):
         'form': payload,
         'status_choices': CommunityPost.STATUS_CHOICES,
         'visibility_choices': CommunityPost.VISIBILITY_CHOICES,
+        'submit_label': 'Publish Post',
+        'cancel_url': reverse('tree:community-feed'),
     })
+
+
+@login_required
+def community_edit_post(request, post_id):
+    post = get_object_or_404(CommunityPost, pk=post_id, user=request.user)
+    errors = []
+    payload = {
+        'title': post.title,
+        'content': post.content,
+        'progress_status': post.progress_status,
+        'visibility': post.visibility,
+    }
+
+    if request.method == 'POST':
+        payload['title'] = (request.POST.get('title') or '').strip()
+        payload['content'] = (request.POST.get('content') or '').strip()
+        payload['progress_status'] = (request.POST.get('progress_status') or '').strip()
+        payload['visibility'] = (request.POST.get('visibility') or CommunityPost.VISIBILITY_PUBLIC).strip()
+
+        if not payload['title']:
+            errors.append('Please add a title for your update.')
+        if not payload['content']:
+            errors.append('Please add some content for your update.')
+
+        valid_statuses = {value for value, _ in CommunityPost.STATUS_CHOICES}
+        valid_visibilities = {value for value, _ in CommunityPost.VISIBILITY_CHOICES}
+        if payload['progress_status'] and payload['progress_status'] not in valid_statuses:
+            errors.append('Please choose a valid progress status.')
+        if payload['visibility'] not in valid_visibilities:
+            errors.append('Please choose a valid visibility.')
+
+        if not errors:
+            post.title = payload['title']
+            post.content = payload['content']
+            post.progress_status = payload['progress_status']
+            post.visibility = payload['visibility']
+            post.save(update_fields=['title', 'content', 'progress_status', 'visibility', 'updated_at'])
+            return redirect('tree:community-my-posts')
+
+    return render(request, 'community_create_post.html', {
+        'errors': errors,
+        'form': payload,
+        'status_choices': CommunityPost.STATUS_CHOICES,
+        'visibility_choices': CommunityPost.VISIBILITY_CHOICES,
+        'is_editing': True,
+        'submit_label': 'Save Changes',
+        'cancel_url': reverse('tree:community-my-posts'),
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def community_delete_post(request, post_id):
+    post = get_object_or_404(CommunityPost, pk=post_id, user=request.user)
+    post.delete()
+    return redirect('tree:community-my-posts')
 
 
 @login_required
@@ -588,6 +649,221 @@ def edge_detail(request, pk):
 
 def _invalidate_tree_cache(user_id):
     cache.delete(f'tree-data:v1:user:{user_id}')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def goodreads_import_preview(request):
+    upload = request.FILES.get('csv_file')
+    if not upload:
+        return Response({'detail': 'Please upload a Goodreads CSV file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        raw_csv = upload.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return Response({'detail': 'Could not read this CSV. Please export it from Goodreads as UTF-8 CSV.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    rows = _parse_goodreads_csv(raw_csv)
+    if not rows:
+        return Response({'detail': 'No Goodreads books were found in this file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    books = [_annotate_import_book(request.user, row) for row in rows]
+    return Response({
+        'books': books,
+        'total': len(books),
+        'importable_count': sum(1 for book in books if not book['exists']),
+        'existing_count': sum(1 for book in books if book['exists']),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def goodreads_import_confirm(request):
+    requested_books = request.data.get('books') or []
+    if not isinstance(requested_books, list):
+        return Response({'detail': 'Books must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    created = []
+    skipped = []
+    with transaction.atomic():
+        for raw_book in requested_books[:1000]:
+            book = _clean_import_payload(raw_book)
+            if not book.get('title'):
+                continue
+
+            existing = _find_existing_book(request.user, book)
+            if existing:
+                skipped.append({
+                    'title': book['title'],
+                    'author': book.get('author', ''),
+                    'reason': 'Already in your tree',
+                    'existing_id': str(existing.id),
+                })
+                continue
+
+            node = Node.objects.create(
+                user=request.user,
+                node_type='book',
+                title=book['title'],
+                author=book.get('author', ''),
+                year=book.get('year'),
+                rating=book.get('rating'),
+                isbn=book.get('isbn', ''),
+                cover_image=book.get('cover_image', ''),
+                shelf=book.get('shelf') or Node.SHELF_WANT_TO_READ,
+                custom_shelf=book.get('custom_shelf', ''),
+                date_read=book.get('date_read'),
+                notes=book.get('notes', ''),
+            )
+            created.append(NodeSerializer(node, context={'request': request}).data)
+
+    if created:
+        _invalidate_tree_cache(request.user.id)
+
+    return Response({
+        'created_count': len(created),
+        'skipped_count': len(skipped),
+        'created': created,
+        'skipped': skipped,
+    }, status=status.HTTP_201_CREATED)
+
+
+def _parse_goodreads_csv(raw_csv):
+    reader = csv.DictReader(io.StringIO(raw_csv))
+    books = []
+    for row in reader:
+        book = _goodreads_row_to_book(row)
+        if book.get('title'):
+            books.append(book)
+    return books[:1000]
+
+
+def _goodreads_row_to_book(row):
+    title = _csv_value(row, 'Title')
+    author = _csv_value(row, 'Author') or _csv_value(row, 'Additional Authors')
+    isbn = _normalize_goodreads_isbn(_csv_value(row, 'ISBN13') or _csv_value(row, 'ISBN'))
+    year = _safe_int(_csv_value(row, 'Original Publication Year') or _csv_value(row, 'Year Published'))
+    rating = _safe_float(_csv_value(row, 'My Rating'))
+    exclusive_shelf = _csv_value(row, 'Exclusive Shelf').lower()
+    shelves = _csv_value(row, 'Bookshelves')
+    date_read = _parse_goodreads_date(_csv_value(row, 'Date Read'))
+    review = _csv_value(row, 'My Review')
+
+    return {
+        'title': title,
+        'author': author,
+        'isbn': isbn,
+        'year': year,
+        'rating': rating,
+        'shelf': _goodreads_shelf(exclusive_shelf),
+        'custom_shelf': _goodreads_custom_shelf(shelves),
+        'date_read': date_read.isoformat() if date_read else None,
+        'notes': review,
+        'cover_image': _open_library_cover_url(isbn) if isbn else '',
+    }
+
+
+def _annotate_import_book(user, book):
+    existing = _find_existing_book(user, book)
+    return {
+        **book,
+        'exists': bool(existing),
+        'match': 'Already in your tree' if existing else 'Ready to import',
+        'existing_id': str(existing.id) if existing else '',
+    }
+
+
+def _clean_import_payload(raw_book):
+    valid_shelves = {value for value, _ in Node.SHELF_CHOICES}
+    shelf = raw_book.get('shelf') if raw_book.get('shelf') in valid_shelves else Node.SHELF_WANT_TO_READ
+    return {
+        'title': str(raw_book.get('title') or '').strip()[:255],
+        'author': str(raw_book.get('author') or '').strip()[:255],
+        'isbn': _normalize_goodreads_isbn(raw_book.get('isbn'))[:20],
+        'year': _safe_int(raw_book.get('year')),
+        'rating': _safe_float(raw_book.get('rating')),
+        'shelf': shelf,
+        'custom_shelf': str(raw_book.get('custom_shelf') or '').strip()[:80],
+        'date_read': _parse_goodreads_date(raw_book.get('date_read')),
+        'notes': str(raw_book.get('notes') or '').strip(),
+        'cover_image': str(raw_book.get('cover_image') or '').strip()[:1000],
+    }
+
+
+def _find_existing_book(user, book):
+    isbn = _normalize_goodreads_isbn(book.get('isbn'))
+    if isbn:
+        existing = Node.objects.filter(user=user, node_type='book', isbn=isbn).first()
+        if existing:
+            return existing
+
+    title = _normalize_text(book.get('title'))
+    author = _normalize_text(book.get('author'))
+    if not title:
+        return None
+
+    candidates = Node.objects.filter(user=user, node_type='book', title__iexact=str(book.get('title') or '').strip())
+    for candidate in candidates:
+        if _normalize_text(candidate.title) == title and _normalize_text(candidate.author) == author:
+            return candidate
+    return None
+
+
+def _csv_value(row, key):
+    return str(row.get(key) or '').strip()
+
+
+def _normalize_goodreads_isbn(value):
+    normalized = str(value or '').replace('=', '').replace('"', '').replace('-', '').strip()
+    return ''.join(ch for ch in normalized if ch.isdigit() or ch.upper() == 'X')
+
+
+def _safe_int(value):
+    try:
+        parsed = int(str(value or '').strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0 < parsed < 3000 else None
+
+
+def _safe_float(value):
+    try:
+        parsed = float(str(value or '').strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if 0 <= parsed <= 5 else None
+
+
+def _parse_goodreads_date(value):
+    from datetime import datetime
+
+    raw = str(value or '').strip()
+    if not raw:
+        return None
+    for fmt in ('%Y/%m/%d', '%Y-%m-%d', '%m/%d/%Y', '%b %d, %Y', '%B %d, %Y'):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _goodreads_shelf(exclusive_shelf):
+    shelf_map = {
+        'read': Node.SHELF_READ,
+        'currently-reading': Node.SHELF_CURRENTLY_READING,
+        'to-read': Node.SHELF_WANT_TO_READ,
+    }
+    return shelf_map.get(exclusive_shelf, Node.SHELF_WANT_TO_READ)
+
+
+def _goodreads_custom_shelf(shelves):
+    values = [
+        value.strip()
+        for value in str(shelves or '').split(',')
+        if value.strip() and value.strip() not in {'read', 'currently-reading', 'to-read'}
+    ]
+    return values[0][:80] if values else ''
 
 
 # ──────────────────────────────────────────────

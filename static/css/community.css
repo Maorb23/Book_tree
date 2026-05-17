@@ -211,6 +211,23 @@ body {
   font-size: 0.85rem;
 }
 
+.post-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.post-actions form {
+  display: inline-flex;
+}
+
+.post-actions .btn--danger {
+  border: 1px solid rgba(212, 111, 94, 0.4);
+  background: rgba(74, 26, 22, 0.78);
+  color: #ffd7d0;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

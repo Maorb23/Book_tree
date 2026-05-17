@@ -173,7 +173,10 @@ body {
 }
 
 .hero-book {
+  position: absolute;
   opacity: 0.34;
+  animation: leafFall 8s ease-in-out infinite;
+  --leaf-scale-x: 1;
 }
 
 .hero-book--leaf {
@@ -196,10 +199,14 @@ body {
   background: rgba(0, 0, 0, 0.34);
 }
 
+.hero-book--right {
+  --leaf-scale-x: -1;
+}
+
 @keyframes leafFall {
   0%,
-  100% { transform: translate3d(0, 0, 0) rotate(-7deg); }
-  50% { transform: translate3d(8px, -18px, 0) rotate(8deg); }
+  100% { transform: translate3d(0, 0, 0) scaleX(var(--leaf-scale-x)) rotate(var(--rot, -7deg)); }
+  50% { transform: translate3d(8px, -18px, 0) scaleX(var(--leaf-scale-x)) rotate(var(--drift-rot, 8deg)); }
 }
 
 .recommendations {
