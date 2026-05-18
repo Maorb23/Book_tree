@@ -342,6 +342,20 @@ body {
   gap: 8px;
 }
 
+.reading-update {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto) minmax(100px, auto);
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(157, 204, 122, 0.28);
+  border-radius: 8px;
+  background: rgba(16, 30, 17, 0.58);
+}
+
+.reading-update[hidden] {
+  display: none;
+}
+
 .add-to-tree {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(76px, auto);
@@ -433,6 +447,10 @@ body {
   }
 
   .add-to-tree {
+    grid-template-columns: 1fr;
+  }
+
+  .reading-update {
     grid-template-columns: 1fr;
   }
 }

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - Challenges{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/challenges.css' %}">
+{% endblock %}
+
+{% block body %}
+<nav class="nav nav--solid">
+  <a class="nav__logo" href="{% url 'tree:landing' %}">
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
+  </a>
+  <div class="nav__links">
+    <a href="{% url 'tree:landing' %}">Home</a>
+    <a href="{% url 'tree:tree' %}">My Tree</a>
+    <a href="{% url 'tree:my-books' %}">My Books</a>
+    <a href="{% url 'tree:community-feed' %}">Community</a>
+    <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
+  </div>
+</nav>
+
+<main class="challenge-page" data-book-percent="{{ book_percent }}" data-streak="{{ current_page_streak }}" data-best="{{ best_page_streak }}">
+  <section class="challenge-hero">
+    <div class="challenge-hero__rings" aria-hidden="true"></div>
+    <div>
+      <p class="section-kicker">Challenges</p>
+      <h1>Grow the reading forest in 2026.</h1>
+      <p>Set your yearly canopy goal, log daily pages from Currently Reading books, and watch the forest light up as your streaks take root.</p>
+    </div>
+    <div class="challenge-hero__stat">
+      <span>{{ books_read_2026 }}</span>
+      <small>books finished in 2026</small>
+    </div>
+  </section>
+
+  <section class="challenge-grid">
+    <article class="challenge-card challenge-card--canopy">
+      <div class="challenge-card__head">
+        <div>
+          <p class="section-kicker">Challenge 1</p>
+          <h2>Read X Books in 2026</h2>
+        </div>
+        <span class="challenge-badge">{{ book_percent }}%</span>
+      </div>
+      <div class="forest-meter" aria-label="Book challenge progress">
+        <div class="forest-meter__track">
+          <div class="forest-meter__fill" style="width: {{ book_percent }}%"></div>
+        </div>
+        <div class="forest-meter__trees" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <p class="challenge-copy">
+        {{ books_read_2026 }} of {{ challenge.target_books }} books complete.
+        {% if books_remaining %}{{ books_remaining }} to go.{% else %}Goal reached. The canopy is glowing.{% endif %}
+      </p>
+      <form class="target-form" id="targetForm">
+        <label for="targetBooks">Your 2026 book target</label>
+        <div>
+          <input id="targetBooks" name="target_books" type="number" min="1" max="1000" value="{{ challenge.target_books }}">
+          <button class="btn btn--primary" type="submit">Update Goal</button>
+        </div>
+      </form>
+    </article>
+
+    <article class="challenge-card challenge-card--streak">
+      <div class="challenge-card__head">
+        <div>
+          <p class="section-kicker">Challenge 2</p>
+          <h2>50 Pages a Day Streak</h2>
+        </div>
+        <span class="challenge-badge">{{ current_page_streak }} days</span>
+      </div>
+      <div class="streak-orbit" aria-label="Page streak progress">
+        <div class="streak-orbit__core">{{ page_streak_goal }}</div>
+        <span style="--i:0"></span><span style="--i:1"></span><span style="--i:2"></span><span style="--i:3"></span>
+        <span style="--i:4"></span><span style="--i:5"></span><span style="--i:6"></span><span style="--i:7"></span>
+      </div>
+      <p class="challenge-copy">
+        Current streak: {{ current_page_streak }} day{{ current_page_streak|pluralize }}.
+        Personal best: {{ best_page_streak }} day{{ best_page_streak|pluralize }}.
+      </p>
+      <form class="quick-log" id="quickLogForm">
+        <label for="quickBook">Log pages from Currently Reading</label>
+        <div class="quick-log__row">
+          <select id="quickBook" name="book_ref" {% if not currently_reading_books %}disabled{% endif %}>
+            {% for book in currently_reading_books %}
+              <option value="{{ book.library_source }}:{{ book.id }}">{{ book.title }}{% if book.author %} - {{ book.author }}{% endif %}</option>
+            {% empty %}
+              <option>No Currently Reading books</option>
+            {% endfor %}
+          </select>
+          <input id="quickPages" name="pages" type="number" min="1" max="5000" placeholder="Pages">
+          <input id="quickDate" name="log_date" type="date">
+          <button class="btn btn--primary" type="submit" {% if not currently_reading_books %}disabled{% endif %}>Log</button>
+        </div>
+      </form>
+    </article>
+  </section>
+
+  <section class="challenge-panel">
+    <div>
+      <p class="section-kicker">Recent Reading Updates</p>
+      <h2>Trail markers</h2>
+    </div>
+    <div class="log-list" id="recentLogs">
+      {% for log in recent_page_logs %}
+        <article>
+          <strong>{{ log.pages }} pages</strong>
+          <span>{{ log.book_title }}{% if log.book_author %} - {{ log.book_author }}{% endif %}</span>
+          <time>{{ log.log_date }}</time>
+        </article>
+      {% empty %}
+        <p class="empty-copy">No page logs yet. Add a Currently Reading book and log your first 50-page day.</p>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+
+<div id="challengeToast" class="challenge-toast" aria-live="polite"></div>
+<script src="{% static 'js/challenges.js' %}"></script>
+{% endblock %}

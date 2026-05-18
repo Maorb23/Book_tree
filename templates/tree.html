@@ -483,6 +483,7 @@
     <div class="nav__links">
       <span class="nav__user">{{ request.user.username }}</span>
       <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
+      <a href="{% url 'tree:challenges' %}" class="btn btn--ghost">Challenges</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
       <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
       <button class="btn btn--ghost" id="treeVersionsBtn" type="button">Versions</button>
@@ -825,7 +826,8 @@
     }
 
     function currentTreeSnapshot() {
-      return cloneTreeSnapshot({ nodes: window.allNodes || [], edges: window.allEdges || [] });
+      const realEdges = (window.allEdges || []).filter(edge => !String(edge.id || '').startsWith('parent-'));
+      return cloneTreeSnapshot({ nodes: window.allNodes || [], edges: realEdges });
     }
 
     function markTreeDirty() {
@@ -1189,7 +1191,7 @@
         window.allNodes = allNodes;
         window.nodeMap = nodeMap;
         window.allEdges = allEdges;
-        treeBaselineSnapshot = cloneTreeSnapshot({ nodes: allNodes, edges: allEdges });
+        treeBaselineSnapshot = currentTreeSnapshot();
 
         if (allNodes.length === 0) {
           document.getElementById('loadingOverlay').style.display = 'none';
@@ -2801,8 +2803,6 @@
         if (item.node_type === 'author') {
           fGenre.value = '';
           fIsbn.value = '';
-          fCoverUrl.value = '';
-          coverPreview.innerHTML = '<span>No cover</span>';
         }
         populateFromBookInfo(item, { force: true });
         fTitle.value = item.title || fTitle.value;

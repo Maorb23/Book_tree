@@ -18,6 +18,7 @@
   <div class="nav__links">
     <a href="{% url 'tree:landing' %}">Home</a>
     <a href="{% url 'tree:tree' %}">My Tree</a>
+    <a href="{% url 'tree:challenges' %}">Challenges</a>
     <a href="{% url 'tree:community-feed' %}">Community</a>
     <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
   </div>
@@ -123,6 +124,11 @@
             </select>
             <input class="custom-shelf-input" type="text" value="{{ book.custom_shelf }}" placeholder="Custom shelf">
             <button class="btn btn--ghost btn--sm save-book-shelf">Save</button>
+            <div class="reading-update" {% if book.shelf != "currently_reading" %}hidden{% endif %}>
+              <input class="reading-pages-input" type="number" min="1" max="5000" placeholder="Pages today" aria-label="Pages read for {{ book.title }}">
+              <input class="reading-date-input" type="date" aria-label="Reading date for {{ book.title }}">
+              <button class="btn btn--primary btn--sm log-reading-update" type="button">Log Pages</button>
+            </div>
             <div class="add-to-tree">
               <select class="tree-parent-select" aria-label="Tree parent for {{ book.title }}">
                 <option value="">Add as main node</option>

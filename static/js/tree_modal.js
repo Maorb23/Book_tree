@@ -269,8 +269,6 @@
     if (match.node_type === 'author') {
       fGenre.value = '';
       fIsbn.value = '';
-      fCoverUrl.value = '';
-      coverPreview.innerHTML = '<span>No cover</span>';
     }
     populateFromBookInfo(match, { force: true });
     // Normalize field value to clean title after selection.

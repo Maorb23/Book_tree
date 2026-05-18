@@ -17,6 +17,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 5 11h4l-3 5h5v5h2v-5h5l-3-5h4z"/><path d="M12 3v18"/></svg>
       </span>
     </a>
+    <a href="{% url 'tree:challenges' %}" class="btn btn--ghost" aria-label="Challenges" title="Challenges">
+      <span class="nav-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19h14"/><path d="M7 19V8l5-4 5 4v11"/><path d="M10 19v-6h4v6"/><path d="M8 10h8"/></svg>
+      </span>
+    </a>
     <a href="{% url 'tree:community-create-post' %}" class="btn btn--primary {% if active == 'create' %}btn--active{% endif %}" aria-label="New Post" title="New Post">
       <span class="nav-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>

@@ -144,6 +144,42 @@ class TreeVersion(models.Model):
         return f"{self.user.username} - {self.label}"
 
 
+class ReadingChallenge(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reading_challenges')
+    year = models.PositiveIntegerField(default=2026)
+    target_books = models.PositiveIntegerField(default=25)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'year')
+        indexes = [
+            models.Index(fields=['user', 'year'], name='read_chal_user_year_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.year} reading challenge"
+
+
+class DailyPageLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='daily_page_logs')
+    node = models.ForeignKey(Node, null=True, blank=True, on_delete=models.CASCADE, related_name='page_logs')
+    imported_book = models.ForeignKey(ImportedBook, null=True, blank=True, on_delete=models.CASCADE, related_name='page_logs')
+    book_title = models.CharField(max_length=255)
+    book_author = models.CharField(max_length=255, blank=True)
+    log_date = models.DateField()
+    pages = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-log_date', '-created_at']
+        indexes = [
+            models.Index(fields=['user', 'log_date'], name='page_log_user_date_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.pages} pages on {self.log_date}"
+
+
 class Edge(models.Model):
     """Explicit relationship between two nodes."""
     EDGE_TYPES = [

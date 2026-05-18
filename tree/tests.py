@@ -7,10 +7,14 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
 from unittest.mock import patch
+from datetime import date, timedelta
 import json
 
 from .email_backends import ResendEmailBackend
-from .models import FriendRequest, Friendship, CommunityPost, Node, ImportedBook, TreeVersion
+from .models import (
+    FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
+    TreeVersion, ReadingChallenge, DailyPageLog,
+)
 from .views import _apply_known_book_metadata, _book_rank, _search_authors_open_library
 from book_tree.settings import _email_env
 
@@ -213,6 +217,7 @@ class BookSearchMetadataTests(SimpleTestCase):
             'docs': [
                 {
                     'name': 'Ernest Hemingway',
+                    'key': 'OL13640A',
                     'birth_date': 'July 21, 1899',
                     'top_work': 'The Old Man and the Sea',
                     'work_count': 400,
@@ -225,6 +230,7 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(results[0]['title'], 'Ernest Hemingway')
         self.assertEqual(results[0]['node_type'], 'author')
         self.assertEqual(results[0]['year'], '1899')
+        self.assertEqual(results[0]['cover_url'], 'https://covers.openlibrary.org/a/olid/OL13640A-M.jpg')
 
 
 class GoodreadsImportTests(TestCase):
@@ -350,7 +356,12 @@ class GoodreadsImportTests(TestCase):
                 'isbn': '9780441172719',
                 'parent': None,
             }],
-            'edges': [],
+            'edges': [{
+                'id': f'parent-{node.id}',
+                'source': str(node.id),
+                'target': str(node.id),
+                'edge_type': 'progression',
+            }],
         }
         node.title = 'Dune Messiah'
         node.save(update_fields=['title'])
@@ -413,3 +424,63 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(response.status_code, 201)
         node = Node.objects.get(user=self.user, title='Dune')
         self.assertEqual(node.parent, parent)
+
+    def test_challenge_target_can_be_updated(self):
+        response = self.client.post(
+            reverse('tree:api-challenge-target'),
+            data=json.dumps({'target_books': 42}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        challenge = ReadingChallenge.objects.get(user=self.user, year=2026)
+        self.assertEqual(challenge.target_books, 42)
+        self.assertEqual(response.json()['challenge']['target_books'], 42)
+
+    def test_reading_update_counts_only_currently_reading_books(self):
+        book = Node.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            node_type='book',
+            shelf=Node.SHELF_CURRENTLY_READING,
+        )
+
+        response = self.client.post(
+            reverse('tree:api-reading-update'),
+            data=json.dumps({
+                'source': 'tree',
+                'book_id': str(book.id),
+                'pages': 55,
+                'log_date': date.today().isoformat(),
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(DailyPageLog.objects.filter(user=self.user, node=book).count(), 1)
+        self.assertEqual(response.json()['current_page_streak'], 1)
+
+    @override_settings(STATICFILES_STORAGE='django.contrib.staticfiles.storage.StaticFilesStorage')
+    def test_page_streak_personal_best_tracks_consecutive_50_page_days(self):
+        book = Node.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            node_type='book',
+            shelf=Node.SHELF_CURRENTLY_READING,
+        )
+        for offset in (2, 1, 0):
+            DailyPageLog.objects.create(
+                user=self.user,
+                node=book,
+                book_title=book.title,
+                book_author=book.author,
+                pages=50,
+                log_date=date.today() - timedelta(days=offset),
+            )
+
+        response = self.client.get(reverse('tree:challenges'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Personal best: 3 days')

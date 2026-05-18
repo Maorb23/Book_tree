@@ -62,6 +62,14 @@
     });
   }
 
+  function syncReadingControls(card) {
+    const panel = card.querySelector('.reading-update');
+    if (!panel) return;
+    panel.hidden = card.dataset.shelf !== 'currently_reading';
+    const dateInput = panel.querySelector('.reading-date-input');
+    if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
+  }
+
   function syncShelfTabs() {
     const baseCounts = {
       all: cards.length,
@@ -249,6 +257,7 @@
         card.dataset.shelf = shelf;
         card.dataset.custom = customShelf.toLowerCase();
         card.dataset.customLabel = customShelf;
+        syncReadingControls(card);
         syncShelfTabs();
         applyFilters();
         showToast('Shelf updated.');
@@ -296,6 +305,46 @@
     });
   });
 
+  document.querySelectorAll('.log-reading-update').forEach(button => {
+    button.addEventListener('click', async () => {
+      const card = button.closest('.library-book');
+      if (!card) return;
+      const pagesInput = card.querySelector('.reading-pages-input');
+      const dateInput = card.querySelector('.reading-date-input');
+      const pages = Number(pagesInput?.value || 0);
+      if (!pages || pages < 1) {
+        showToast('Enter how many pages you read.');
+        pagesInput?.focus();
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Logging...';
+      try {
+        const res = await fetch('/api/reading-updates/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+          body: JSON.stringify({
+            source: card.dataset.source,
+            book_id: card.dataset.id,
+            pages,
+            log_date: dateInput?.value || new Date().toISOString().slice(0, 10),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || 'Could not log pages.');
+        if (pagesInput) pagesInput.value = '';
+        showToast(`Logged ${pages} pages. Best streak: ${data.best_page_streak || 0} days.`);
+      } catch (error) {
+        showToast(error.message || 'Could not log pages.');
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Log Pages';
+      }
+    });
+  });
+
+  cards.forEach(syncReadingControls);
   syncShelfTabs();
   applyFilters();
 })();

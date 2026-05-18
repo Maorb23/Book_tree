@@ -7,6 +7,7 @@ import uuid
 from itertools import chain
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 import random
 import re
 from smtplib import SMTPException
@@ -15,7 +16,7 @@ from html import unescape
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db import IntegrityError
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Sum
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -37,7 +38,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, TreeVersion
+from .models import (
+    Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook,
+    TreeVersion, ReadingChallenge, DailyPageLog,
+)
 from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeVersionSerializer
 from .forms import EmailUserCreationForm
 
@@ -102,6 +106,113 @@ def my_books(request):
         'shelf_counts': shelf_counts,
         'custom_shelves': custom_shelves,
     })
+
+
+@login_required
+def challenges(request):
+    context = _challenge_context(request.user)
+    return render(request, 'challenges.html', context)
+
+
+def _challenge_context(user):
+    challenge, _ = ReadingChallenge.objects.get_or_create(user=user, year=2026)
+    books_read = (
+        Node.objects.filter(
+            user=user,
+            node_type='book',
+            shelf=Node.SHELF_READ,
+            date_read__year=challenge.year,
+        ).count()
+        + ImportedBook.objects.filter(
+            user=user,
+            shelf=Node.SHELF_READ,
+            date_read__year=challenge.year,
+        ).count()
+    )
+    target = max(challenge.target_books, 1)
+    book_percent = min(100, round((books_read / target) * 100))
+
+    page_days = _page_streak_days(user)
+    current_streak = _current_page_streak(page_days)
+    best_streak = _best_page_streak(page_days)
+    recent_logs = DailyPageLog.objects.filter(user=user).order_by('-log_date', '-created_at')[:8]
+    currently_reading = list(Node.objects.filter(
+        user=user,
+        node_type='book',
+        shelf=Node.SHELF_CURRENTLY_READING,
+    ).order_by('title')[:8])
+    currently_reading += list(ImportedBook.objects.filter(
+        user=user,
+        shelf=Node.SHELF_CURRENTLY_READING,
+    ).order_by('title')[:8])
+
+    return {
+        'challenge': challenge,
+        'books_read_2026': books_read,
+        'book_percent': book_percent,
+        'books_remaining': max(target - books_read, 0),
+        'current_page_streak': current_streak,
+        'best_page_streak': best_streak,
+        'page_streak_goal': 50,
+        'recent_page_logs': recent_logs,
+        'currently_reading_books': currently_reading[:8],
+    }
+
+
+def _challenge_payload(user):
+    context = _challenge_context(user)
+    challenge = context['challenge']
+    return {
+        'challenge': {
+            'year': challenge.year,
+            'target_books': challenge.target_books,
+        },
+        'books_read_2026': context['books_read_2026'],
+        'book_percent': context['book_percent'],
+        'books_remaining': context['books_remaining'],
+        'current_page_streak': context['current_page_streak'],
+        'best_page_streak': context['best_page_streak'],
+        'page_streak_goal': context['page_streak_goal'],
+    }
+
+
+def _page_streak_days(user):
+    rows = (
+        DailyPageLog.objects
+        .filter(user=user)
+        .values('log_date')
+        .annotate(total_pages=Sum('pages'))
+        .filter(total_pages__gte=50)
+        .order_by('log_date')
+    )
+    return {row['log_date'] for row in rows}
+
+
+def _current_page_streak(days):
+    if not days:
+        return 0
+    cursor = date.today()
+    streak = 0
+    while cursor in days:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
+
+
+def _best_page_streak(days):
+    if not days:
+        return 0
+    best = 0
+    current = 0
+    previous = None
+    for day in sorted(days):
+        if previous and day == previous + timedelta(days=1):
+            current += 1
+        else:
+            current = 1
+        best = max(best, current)
+        previous = day
+    return best
 
 
 def register_view(request):
@@ -703,6 +814,73 @@ def tree_snapshot_restore(request):
     return Response({'detail': 'Tree changes discarded.'})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def challenge_target_update(request):
+    raw_target = request.data.get('target_books')
+    try:
+        target = int(raw_target)
+    except (TypeError, ValueError):
+        return Response({'detail': 'Target must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+    if target < 1 or target > 1000:
+        return Response({'detail': 'Choose a target between 1 and 1000 books.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    challenge, _ = ReadingChallenge.objects.get_or_create(
+        user=request.user,
+        year=2026,
+        defaults={'target_books': target},
+    )
+    if challenge.target_books != target:
+        challenge.target_books = target
+        challenge.save(update_fields=['target_books', 'updated_at'])
+    return Response(_challenge_payload(request.user))
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def reading_update_create(request):
+    source = (request.data.get('source') or '').strip()
+    book_id = request.data.get('book_id')
+    try:
+        pages = int(request.data.get('pages'))
+    except (TypeError, ValueError):
+        return Response({'detail': 'Pages must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+    if pages < 1 or pages > 5000:
+        return Response({'detail': 'Enter pages between 1 and 5000.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    raw_date = (request.data.get('log_date') or '').strip()
+    try:
+        log_date = date.fromisoformat(raw_date) if raw_date else date.today()
+    except ValueError:
+        return Response({'detail': 'Use a valid reading date.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    node = None
+    imported_book = None
+    if source == 'imported':
+        imported_book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=book_id)
+        book = imported_book
+    else:
+        node = get_object_or_404(Node.objects.filter(user=request.user, node_type='book'), pk=book_id)
+        book = node
+
+    if book.shelf != Node.SHELF_CURRENTLY_READING:
+        return Response(
+            {'detail': 'Page streak updates are only available for Currently Reading books.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    DailyPageLog.objects.create(
+        user=request.user,
+        node=node,
+        imported_book=imported_book,
+        book_title=book.title,
+        book_author=book.author,
+        log_date=log_date,
+        pages=pages,
+    )
+    return Response(_challenge_payload(request.user), status=status.HTTP_201_CREATED)
+
+
 @api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def imported_book_detail(request, pk):
@@ -862,12 +1040,19 @@ def _restore_tree_snapshot(user, snapshot):
             node.save(update_fields=['parent'])
 
     for row in edge_rows:
+        edge_id = str(row.get('id') or '')
+        if edge_id.startswith('parent-'):
+            continue
         source = created_nodes.get(row.get('source'))
         target = created_nodes.get(row.get('target'))
         if not source or not target:
             continue
+        try:
+            edge_uuid = uuid.UUID(edge_id)
+        except (TypeError, ValueError):
+            continue
         Edge.objects.create(
-            id=uuid.UUID(row['id']),
+            id=edge_uuid,
             user=user,
             source=source,
             target=target,
@@ -1555,6 +1740,7 @@ def _search_authors_open_library(query, max_results=8):
         name = (doc.get('name') or '').strip()
         if not name:
             continue
+        author_key = str(doc.get('key') or '').replace('/authors/', '').strip()
         birth_date = str(doc.get('birth_date') or '').strip()
         year_match = re.search(r'\b(\d{4})\b', birth_date)
         results.append({
@@ -1564,7 +1750,7 @@ def _search_authors_open_library(query, max_results=8):
             'genre': '',
             'year': year_match.group(1) if year_match else '',
             'isbn': '',
-            'cover_url': '',
+            'cover_url': f'https://covers.openlibrary.org/a/olid/{author_key}-M.jpg' if author_key else '',
             'description': doc.get('top_work') or '',
             '_score': 100 if _normalize_text(name) == query_norm else int(doc.get('work_count') or 0),
         })

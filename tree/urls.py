@@ -23,6 +23,7 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('tree/', views.tree_page, name='tree'),
     path('my-books/', views.my_books, name='my-books'),
+    path('challenges/', views.challenges, name='challenges'),
     path('book/', views.book_page, name='book'),
 
     # API
@@ -40,6 +41,8 @@ urlpatterns = [
     path('api/cover/', views.fetch_cover, name='api-cover'),
     path('api/book-search/', views.search_books, name='api-book-search'),
     path('api/author-search/', views.search_authors, name='api-author-search'),
+    path('api/challenges/target/', views.challenge_target_update, name='api-challenge-target'),
+    path('api/reading-updates/', views.reading_update_create, name='api-reading-update'),
     path('api/goodreads/preview/', views.goodreads_import_preview, name='api-goodreads-preview'),
     path('api/goodreads/import/', views.goodreads_import_confirm, name='api-goodreads-import'),
 ]
