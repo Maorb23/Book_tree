@@ -272,7 +272,7 @@
         : `/api/nodes/${card.dataset.id}/`;
 
       button.disabled = true;
-      button.textContent = isImported ? 'Adding...' : 'Moving...';
+      button.textContent = 'Adding...';
       try {
         const res = await fetch(endpoint, {
           method: isImported ? 'POST' : 'PATCH',
@@ -286,12 +286,12 @@
         }
         if (data.id) card.dataset.id = data.id;
         card.dataset.source = 'tree';
-        showToast(isImported ? 'Book added to your tree.' : 'Book moved in your tree.');
+        showToast('Book added to your tree.');
       } catch (error) {
         showToast(error.message || 'Could not update the tree.');
       } finally {
         button.disabled = false;
-        button.textContent = 'Move in Tree';
+        button.textContent = 'Add';
       }
     });
   });

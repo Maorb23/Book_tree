@@ -147,6 +147,8 @@
     btn.addEventListener('click', () => {
       selectedType = btn.dataset.type;
       updateTypeButtons();
+      const q = fTitle.value.trim();
+      if (q.length >= 3) lookupBooksByTitle(q);
     });
   });
 
@@ -218,7 +220,8 @@
 
   async function lookupBooksByTitle(query) {
     try {
-      const res = await fetch(`/api/book-search/?q=${encodeURIComponent(query)}`);
+      const endpoint = selectedType === 'author' ? '/api/author-search/' : '/api/book-search/';
+      const res = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       autocompleteOptions = (data.results || []).slice(0, 8).map(item => ({
         ...item,
@@ -259,6 +262,16 @@
       }
     }
     if (!match) return;
+    if (match.node_type) {
+      selectedType = match.node_type;
+      updateTypeButtons();
+    }
+    if (match.node_type === 'author') {
+      fGenre.value = '';
+      fIsbn.value = '';
+      fCoverUrl.value = '';
+      coverPreview.innerHTML = '<span>No cover</span>';
+    }
     populateFromBookInfo(match, { force: true });
     // Normalize field value to clean title after selection.
     fTitle.value = match.title || fTitle.value;

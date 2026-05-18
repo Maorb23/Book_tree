@@ -344,8 +344,13 @@ body {
 
 .add-to-tree {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(76px, auto);
   gap: 8px;
+}
+
+.add-book-to-tree {
+  min-width: 76px;
+  justify-content: center;
 }
 
 .library-book__controls select,

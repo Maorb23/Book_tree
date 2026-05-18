@@ -818,6 +818,15 @@
     window.showToast = showToast;
 
     let treeHasUnsavedVersion = false;
+    let treeBaselineSnapshot = null;
+
+    function cloneTreeSnapshot(snapshot) {
+      return JSON.parse(JSON.stringify(snapshot || { nodes: [], edges: [] }));
+    }
+
+    function currentTreeSnapshot() {
+      return cloneTreeSnapshot({ nodes: window.allNodes || [], edges: window.allEdges || [] });
+    }
 
     function markTreeDirty() {
       treeHasUnsavedVersion = true;
@@ -839,8 +848,24 @@
         body: JSON.stringify({ label }),
       });
       if (!res.ok) throw new Error('Could not save tree version');
+      treeBaselineSnapshot = currentTreeSnapshot();
       clearTreeDirty();
       showToast('Tree version saved.', 'success');
+    }
+
+    async function discardTreeChanges() {
+      if (!treeBaselineSnapshot) {
+        clearTreeDirty();
+        return;
+      }
+      const res = await fetch('/api/tree/discard/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ snapshot: treeBaselineSnapshot }),
+      });
+      if (!res.ok) throw new Error('Could not discard tree changes');
+      if (typeof window.loadTree === 'function') await window.loadTree();
+      clearTreeDirty();
     }
 
     async function promptTreeNavigation(targetUrl) {
@@ -891,10 +916,19 @@
             showToast('Could not save this tree version.', 'error');
           }
         });
-        modalEl.querySelector('[data-role="leave"]').addEventListener('click', () => {
-          clearTreeDirty();
-          finish('leave');
-          window.location.href = targetUrl;
+        modalEl.querySelector('[data-role="leave"]').addEventListener('click', async () => {
+          const leaveButton = modalEl.querySelector('[data-role="leave"]');
+          leaveButton.disabled = true;
+          leaveButton.textContent = 'Discarding...';
+          try {
+            await discardTreeChanges();
+            finish('leave');
+            window.location.href = targetUrl;
+          } catch (_) {
+            leaveButton.disabled = false;
+            leaveButton.textContent = "Don't Save";
+            showToast('Could not discard these tree changes.', 'error');
+          }
         });
         modalEl.querySelectorAll('[data-role="cancel"]').forEach(el => {
           el.addEventListener('click', () => finish('cancel'));
@@ -1154,6 +1188,8 @@
         allNodes.forEach(n => nodeMap[n.id] = n);
         window.allNodes = allNodes;
         window.nodeMap = nodeMap;
+        window.allEdges = allEdges;
+        treeBaselineSnapshot = cloneTreeSnapshot({ nodes: allNodes, edges: allEdges });
 
         if (allNodes.length === 0) {
           document.getElementById('loadingOverlay').style.display = 'none';
@@ -2370,6 +2406,7 @@
       nodeMap[node.id] = idx >= 0 ? allNodes[idx] : node;
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      window.allEdges = allEdges;
       syncTreeEmptyState();
       renderTreeInstant();
       markTreeDirty();
@@ -2391,6 +2428,7 @@
       allNodes.forEach((node) => { nodeMap[node.id] = node; });
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      window.allEdges = allEdges;
       syncTreeEmptyState();
       renderTreeInstant();
       markTreeDirty();
@@ -2404,6 +2442,7 @@
       else { allEdges.push(edge); }
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      window.allEdges = allEdges;
       renderTreeInstant();
       markTreeDirty();
     }
@@ -2413,6 +2452,7 @@
       allEdges = allEdges.filter(edge => String(edge.id) !== id);
       window.allNodes = allNodes;
       window.nodeMap = nodeMap;
+      window.allEdges = allEdges;
       renderTreeInstant();
       markTreeDirty();
     }
@@ -2600,6 +2640,8 @@
         btn.addEventListener('click', () => {
           selectedType = btn.dataset.type;
           updateTypeButtons();
+          const q = fTitle.value.trim();
+          if (q.length >= 3) lookupBooksByTitle(q);
         });
       });
 
@@ -2675,7 +2717,8 @@
 
       async function lookupBooksByTitle(query) {
         try {
-          const res = await fetch(`/api/book-search/?q=${encodeURIComponent(query)}`);
+          const endpoint = selectedType === 'author' ? '/api/author-search/' : '/api/book-search/';
+          const res = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
           const data = await res.json();
           autocompleteOptions = (data.results || []).slice(0, 8).map(item => ({
             ...item,
@@ -2751,6 +2794,16 @@
 
       function selectBookSuggestion(item) {
         suppressTitleLookup = true;
+        if (item.node_type) {
+          selectedType = item.node_type;
+          updateTypeButtons();
+        }
+        if (item.node_type === 'author') {
+          fGenre.value = '';
+          fIsbn.value = '';
+          fCoverUrl.value = '';
+          coverPreview.innerHTML = '<span>No cover</span>';
+        }
         populateFromBookInfo(item, { force: true });
         fTitle.value = item.title || fTitle.value;
         hideBookSuggestions();

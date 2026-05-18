@@ -1,6 +1,7 @@
 import requests
 import logging
 import csv
+import hashlib
 import io
 import uuid
 from itertools import chain
@@ -75,6 +76,7 @@ def tree_page(request):
 @login_required
 def my_books(request):
     tree_books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
+    tree_parent_options = Node.objects.filter(user=request.user).order_by('node_type', 'title')
     imported_books = ImportedBook.objects.filter(user=request.user).order_by('title')
     books = sorted(
         chain(tree_books, imported_books),
@@ -95,7 +97,7 @@ def my_books(request):
     ]
     return render(request, 'my_books.html', {
         'books': books,
-        'tree_parent_options': tree_books,
+        'tree_parent_options': tree_parent_options,
         'shelf_choices': Node.SHELF_CHOICES,
         'shelf_counts': shelf_counts,
         'custom_shelves': custom_shelves,
@@ -550,11 +552,13 @@ def node_list(request):
         serializer = NodeSerializer(nodes, many=True, context={'request': request})
         return Response(serializer.data)
 
-    serializer = NodeSerializer(data=request.data)
+    serializer = NodeSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
         node = serializer.save(user=request.user)
         # Auto-fetch cover if not supplied
-        if not node.cover_image and node.isbn:
+        if node.node_type != 'book':
+            pass
+        elif not node.cover_image and node.isbn:
             node.cover_image = _fetch_cover_open_library(node.isbn)
             node.save(update_fields=['cover_image'])
         elif not node.cover_image and node.title:
@@ -685,6 +689,18 @@ def tree_version_restore(request, version_id):
     _restore_tree_snapshot(request.user, version.snapshot or {})
     _invalidate_tree_cache(request.user.id)
     return Response({'detail': 'Tree version restored.'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def tree_snapshot_restore(request):
+    snapshot = request.data.get('snapshot') or {}
+    if not isinstance(snapshot, dict):
+        return Response({'detail': 'Snapshot must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
+    with transaction.atomic():
+        _restore_tree_snapshot(request.user, snapshot)
+    _invalidate_tree_cache(request.user.id)
+    return Response({'detail': 'Tree changes discarded.'})
 
 
 @api_view(['PATCH', 'DELETE'])
@@ -1140,7 +1156,7 @@ def search_books(request):
     if len(query) < 2:
         return Response({'results': []})
 
-    cache_key = f"book-search:v3:{query.lower()}"
+    cache_key = _cache_key('book-search:v4', query.lower())
     cached_results = cache.get(cache_key)
     if cached_results is not None:
         return Response({'results': cached_results})
@@ -1148,6 +1164,32 @@ def search_books(request):
     results = _search_books_combined(query)
     cache.set(cache_key, results, timeout=60 * 30)
     return Response({'results': results})
+
+
+@api_view(['GET'])
+def search_authors(request):
+    """Autocomplete author nodes by author name."""
+    query = (request.query_params.get('q') or '').strip()
+    if len(query) < 2:
+        return Response({'results': []})
+
+    cache_key = _cache_key('author-search:v1', query.lower())
+    cached_results = cache.get(cache_key)
+    if cached_results is not None:
+        return Response({'results': cached_results})
+
+    try:
+        results = _search_authors_open_library(query)
+    except Exception:
+        logger.exception('Open Library author lookup failed for query=%r', query)
+        results = []
+    cache.set(cache_key, results, timeout=60 * 60)
+    return Response({'results': results})
+
+
+def _cache_key(prefix, value):
+    digest = hashlib.sha256(str(value or '').encode('utf-8')).hexdigest()[:24]
+    return f'{prefix}:{digest}'
 
 
 def _search_books_combined(query):
@@ -1166,6 +1208,12 @@ def _search_books_combined(query):
 
         try:
             google_results = google_future.result(timeout=4.5)
+        except requests.HTTPError as exc:
+            if getattr(exc.response, 'status_code', None) == 429:
+                logger.warning('Google Books rate-limited query=%r; using Open Library fallback.', query)
+            else:
+                logger.exception('Google Books lookup failed for query=%r', query)
+            google_results = []
         except Exception:
             logger.exception('Google Books lookup failed for query=%r', query)
             google_results = []
@@ -1235,13 +1283,22 @@ def _book_rank(row, query):
     title = _normalize_text(row.get('title'))
     author = _normalize_text(row.get('author'))
     query_norm = _normalize_text(query)
+    query_tokens = set(query_norm.split())
+    title_tokens = set(title.split())
+    author_tokens = set(author.split())
     score = 0
     if title == query_norm:
         score += 100
+    elif title and title in query_norm:
+        score += 80
     elif title.startswith(query_norm):
         score += 55
     elif query_norm in title:
         score += 25
+    if title_tokens and title_tokens.issubset(query_tokens):
+        score += 35
+    if author_tokens and query_tokens and author_tokens.intersection(query_tokens):
+        score += 28
     if row.get('year'):
         score += 12
     if row.get('cover_url'):
@@ -1370,6 +1427,30 @@ def _apply_known_book_metadata(row):
             'cover_url': _open_library_cover_url('9781400033416'),
             'genre': 'Fiction - Historical',
         },
+        ('dune', 'frank herbert'): {
+            'isbn': '9780441172719',
+            'year': '1965',
+            'cover_url': _open_library_cover_url('9780441172719'),
+            'genre': 'Fiction - Science Fiction',
+        },
+        ('the hobbit', 'j r r tolkien'): {
+            'isbn': '9780547928227',
+            'year': '1937',
+            'cover_url': _open_library_cover_url('9780547928227'),
+            'genre': 'Fiction - Fantasy',
+        },
+        ('the hobbit', 'john ronald reuel tolkien'): {
+            'isbn': '9780547928227',
+            'year': '1937',
+            'cover_url': _open_library_cover_url('9780547928227'),
+            'genre': 'Fiction - Fantasy',
+        },
+        ('kindred', 'octavia e butler'): {
+            'isbn': '9780807083697',
+            'year': '1979',
+            'cover_url': _open_library_cover_url('9780807083697'),
+            'genre': 'Fiction - Science Fiction',
+        },
     }
     author_key = _normalize_text((row.get('author') or '').split(',')[0])
     override = overrides.get((_normalize_text(row.get('title')), author_key))
@@ -1417,7 +1498,7 @@ def _search_books_google(query, max_results=8):
 def _search_books_open_library(query, max_results=8):
     resp = requests.get(
         'https://openlibrary.org/search.json',
-        params={'title': query, 'limit': max_results},
+        params={'q': query, 'limit': max_results, 'fields': 'title,author_name,subject,first_publish_year,isbn,cover_i,key'},
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
         timeout=3.5,
     )
@@ -1457,6 +1538,40 @@ def _search_books_open_library(query, max_results=8):
         })
 
     return results
+
+
+def _search_authors_open_library(query, max_results=8):
+    resp = requests.get(
+        'https://openlibrary.org/search/authors.json',
+        params={'q': query, 'limit': max_results},
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=3.5,
+    )
+    resp.raise_for_status()
+    docs = resp.json().get('docs') or []
+    results = []
+    query_norm = _normalize_text(query)
+    for doc in docs:
+        name = (doc.get('name') or '').strip()
+        if not name:
+            continue
+        birth_date = str(doc.get('birth_date') or '').strip()
+        year_match = re.search(r'\b(\d{4})\b', birth_date)
+        results.append({
+            'title': name,
+            'author': 'Author',
+            'node_type': 'author',
+            'genre': '',
+            'year': year_match.group(1) if year_match else '',
+            'isbn': '',
+            'cover_url': '',
+            'description': doc.get('top_work') or '',
+            '_score': 100 if _normalize_text(name) == query_norm else int(doc.get('work_count') or 0),
+        })
+    results.sort(key=lambda row: row.get('_score', 0), reverse=True)
+    for row in results:
+        row.pop('_score', None)
+    return results[:max_results]
 
 
 def _fetch_cover_google(title, author=''):

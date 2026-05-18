@@ -11,7 +11,7 @@ import json
 
 from .email_backends import ResendEmailBackend
 from .models import FriendRequest, Friendship, CommunityPost, Node, ImportedBook, TreeVersion
-from .views import _apply_known_book_metadata
+from .views import _apply_known_book_metadata, _book_rank, _search_authors_open_library
 from book_tree.settings import _email_env
 
 
@@ -187,6 +187,45 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(row['year'], '1987')
         self.assertEqual(row['isbn'], '9781400033416')
 
+    def test_known_metadata_preserves_dune_original_publication(self):
+        row = _apply_known_book_metadata({
+            'title': 'Dune',
+            'author': 'Frank Herbert',
+            'year': '2005',
+            'isbn': '',
+            'genre': '',
+            'cover_url': '',
+        })
+
+        self.assertEqual(row['year'], '1965')
+        self.assertEqual(row['isbn'], '9780441172719')
+
+    def test_book_rank_prefers_title_author_match(self):
+        dune = {'title': 'Dune', 'author': 'Frank Herbert', 'year': '1965', 'isbn': '9780441172719'}
+        unrelated = {'title': 'Frank Herbert', 'author': 'William Touponce', 'year': '1988', 'isbn': '9780809313938'}
+
+        self.assertGreater(_book_rank(dune, 'Dune Frank Herbert'), _book_rank(unrelated, 'Dune Frank Herbert'))
+
+    @patch('tree.views.requests.get')
+    def test_author_search_returns_author_node_payloads(self, mock_get):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            'docs': [
+                {
+                    'name': 'Ernest Hemingway',
+                    'birth_date': 'July 21, 1899',
+                    'top_work': 'The Old Man and the Sea',
+                    'work_count': 400,
+                }
+            ]
+        }
+
+        results = _search_authors_open_library('Ernest Hemingway')
+
+        self.assertEqual(results[0]['title'], 'Ernest Hemingway')
+        self.assertEqual(results[0]['node_type'], 'author')
+        self.assertEqual(results[0]['year'], '1899')
+
 
 class GoodreadsImportTests(TestCase):
     def setUp(self):
@@ -294,11 +333,68 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Node.objects.filter(user=self.user, title='Dune Messiah').exists())
 
+    def test_discard_tree_restores_submitted_snapshot_without_version(self):
+        node = Node.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            node_type='book',
+            isbn='9780441172719',
+        )
+        snapshot = {
+            'nodes': [{
+                'id': str(node.id),
+                'title': 'Dune',
+                'node_type': 'book',
+                'author': 'Frank Herbert',
+                'isbn': '9780441172719',
+                'parent': None,
+            }],
+            'edges': [],
+        }
+        node.title = 'Dune Messiah'
+        node.save(update_fields=['title'])
+
+        response = self.client.post(
+            reverse('tree:api-tree-discard'),
+            data=json.dumps({'snapshot': snapshot}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Node.objects.filter(user=self.user, title='Dune').exists())
+        self.assertFalse(Node.objects.filter(user=self.user, title='Dune Messiah').exists())
+        self.assertEqual(TreeVersion.objects.filter(user=self.user).count(), 0)
+
     def test_imported_book_can_be_added_under_tree_parent(self):
         parent = Node.objects.create(
             user=self.user,
             title='Science Fiction',
             node_type='genre',
+        )
+        imported_book = ImportedBook.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            shelf=Node.SHELF_WANT_TO_READ,
+        )
+
+        response = self.client.post(
+            reverse('tree:api-imported-book-add-to-tree', args=[imported_book.id]),
+            data=json.dumps({'parent': str(parent.id)}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        node = Node.objects.get(user=self.user, title='Dune')
+        self.assertEqual(node.parent, parent)
+
+    def test_imported_book_can_be_added_under_author_parent(self):
+        parent = Node.objects.create(
+            user=self.user,
+            title='Frank Herbert',
+            node_type='author',
         )
         imported_book = ImportedBook.objects.create(
             user=self.user,
