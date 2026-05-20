@@ -943,6 +943,44 @@ def imported_book_add_to_tree(request, pk):
     return Response(NodeSerializer(node, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def library_book_create(request):
+    """Add a searched book to My Books without placing it on the tree."""
+    book = _clean_import_payload(request.data or {})
+    if not book['title']:
+        return Response({'detail': 'Choose a book before adding it.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    existing = _find_existing_book(request.user, book)
+    if existing:
+        source = getattr(existing, 'library_source', 'tree')
+        return Response(
+            {
+                'detail': 'This book is already in My Books.',
+                'existing_id': str(existing.id),
+                'source': source,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    source_key = book.get('source_key') or _book_key(book['title'], book.get('author'))
+    imported_book = ImportedBook.objects.create(
+        user=request.user,
+        source=ImportedBook.SOURCE_SEARCH,
+        source_key=source_key[:160],
+        title=book['title'],
+        author=book.get('author') or '',
+        year=book.get('year'),
+        rating=book.get('rating'),
+        isbn=book.get('isbn') or '',
+        cover_image=book.get('cover_image') or '',
+        shelf=book.get('shelf') or Node.SHELF_WANT_TO_READ,
+        custom_shelf=book.get('custom_shelf') or '',
+        notes=book.get('notes') or '',
+    )
+    return Response(ImportedBookSerializer(imported_book).data, status=status.HTTP_201_CREATED)
+
+
 def _create_tree_version(user, label, reason='manual'):
     snapshot = _build_tree_snapshot(user)
     return TreeVersion.objects.create(

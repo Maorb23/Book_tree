@@ -11,8 +11,13 @@
   const importRows = document.getElementById('importPreviewRows');
   const confirmImport = document.getElementById('confirmGoodreadsImport');
   const previewTitle = document.getElementById('importPreviewTitle');
+  const addBooksPanel = document.getElementById('addBooksPanel');
+  const catalogSearch = document.getElementById('catalogBookSearch');
+  const catalogResults = document.getElementById('catalogResults');
+  const runCatalogSearch = document.getElementById('runCatalogSearch');
   let activeFilter = 'all';
   let previewBooks = [];
+  let catalogSearchTimer = null;
 
   function getCsrf() {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
@@ -132,6 +137,117 @@
   });
 
   search?.addEventListener('input', applyFilters);
+
+  function openAddBooksPanel() {
+    if (!addBooksPanel) return;
+    addBooksPanel.hidden = false;
+    addBooksPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => catalogSearch?.focus(), 120);
+  }
+
+  document.getElementById('openAddBooks')?.addEventListener('click', openAddBooksPanel);
+  document.getElementById('emptyAddBooks')?.addEventListener('click', openAddBooksPanel);
+  document.getElementById('closeAddBooks')?.addEventListener('click', () => {
+    if (addBooksPanel) addBooksPanel.hidden = true;
+  });
+
+  function bookPayload(book) {
+    return {
+      title: book.title || '',
+      author: book.author || '',
+      genre: book.genre || '',
+      year: book.year || null,
+      isbn: book.isbn || '',
+      source_key: book.isbn || `${book.title || ''}:${book.author || ''}`,
+      cover_image: book.cover_url || book.cover_image || '',
+      notes: book.description || '',
+      shelf: 'want_to_read',
+    };
+  }
+
+  function renderCatalogResults(results, message) {
+    if (!catalogResults) return;
+    if (message) {
+      catalogResults.innerHTML = `<p class="catalog-results__message">${escapeHtml(message)}</p>`;
+      return;
+    }
+    if (!results.length) {
+      catalogResults.innerHTML = '<p class="catalog-results__message">No matching books found. Try a title, author, or ISBN.</p>';
+      return;
+    }
+    catalogResults.innerHTML = results.map((book, index) => {
+      const cover = book.cover_url
+        ? `<img src="${escapeHtml(book.cover_url)}" alt="">`
+        : `<span>${escapeHtml((book.title || 'B').slice(0, 1))}</span>`;
+      const meta = [book.author || 'Unknown author', book.genre, book.year].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      return `
+        <article class="catalog-book">
+          <div class="catalog-book__cover">${cover}</div>
+          <div class="catalog-book__body">
+            <h3>${escapeHtml(book.title || 'Untitled')}</h3>
+            <p>${meta}</p>
+          </div>
+          <button class="btn btn--primary btn--sm add-catalog-book" type="button" data-index="${index}">Add</button>
+        </article>
+      `;
+    }).join('');
+
+    catalogResults.querySelectorAll('.add-catalog-book').forEach(button => {
+      button.addEventListener('click', async () => {
+        const book = results[Number(button.dataset.index)];
+        if (!book) return;
+        button.disabled = true;
+        button.textContent = 'Adding...';
+        try {
+          const res = await fetch('/api/my-books/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify(bookPayload(book)),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || 'Could not add this book.');
+          showToast('Book added to My Books.');
+          window.location.reload();
+        } catch (error) {
+          showToast(error.message || 'Could not add this book.');
+          button.disabled = false;
+          button.textContent = 'Add';
+        }
+      });
+    });
+  }
+
+  async function searchCatalogBooks() {
+    const query = (catalogSearch?.value || '').trim();
+    if (query.length < 2) {
+      renderCatalogResults([], 'Type at least two characters to search.');
+      return;
+    }
+    renderCatalogResults([], 'Searching the catalog...');
+    if (runCatalogSearch) runCatalogSearch.disabled = true;
+    try {
+      const res = await fetch(`/api/book-search/?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Search failed.');
+      renderCatalogResults((data.results || []).slice(0, 8));
+    } catch (error) {
+      renderCatalogResults([], error.message || 'Could not search right now.');
+    } finally {
+      if (runCatalogSearch) runCatalogSearch.disabled = false;
+    }
+  }
+
+  runCatalogSearch?.addEventListener('click', searchCatalogBooks);
+  catalogSearch?.addEventListener('input', () => {
+    if (catalogSearchTimer) clearTimeout(catalogSearchTimer);
+    catalogSearchTimer = setTimeout(searchCatalogBooks, 380);
+  });
+  catalogSearch?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchCatalogBooks();
+    }
+  });
 
   document.getElementById('openImportBooks')?.addEventListener('click', () => {
     if (!importPanel) return;

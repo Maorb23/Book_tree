@@ -90,8 +90,10 @@ class Node(models.Model):
 
 class ImportedBook(models.Model):
     SOURCE_GOODREADS = "goodreads"
+    SOURCE_SEARCH = "search"
     SOURCE_CHOICES = [
         (SOURCE_GOODREADS, "Goodreads"),
+        (SOURCE_SEARCH, "Search"),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='imported_books')

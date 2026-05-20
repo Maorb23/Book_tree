@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/tree/discard/', views.tree_snapshot_restore, name='api-tree-discard'),
     path('api/nodes/', views.node_list, name='api-node-list'),
     path('api/nodes/<str:pk>/', views.node_detail, name='api-node-detail'),
+    path('api/my-books/', views.library_book_create, name='api-my-books-create'),
     path('api/imported-books/<int:pk>/', views.imported_book_detail, name='api-imported-book-detail'),
     path('api/imported-books/<int:pk>/add-to-tree/', views.imported_book_add_to_tree, name='api-imported-book-add-to-tree'),
     path('api/edges/', views.edge_list, name='api-edge-list'),

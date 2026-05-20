@@ -50,8 +50,26 @@
     <div class="library-toolbar">
       <input type="search" id="bookSearch" placeholder="Search title, author, genre, or shelf">
       <button class="btn btn--ghost" type="button" id="openImportBooks">Import my books</button>
-      <a class="btn btn--primary" href="{% url 'tree:tree' %}">Add Books</a>
+      <button class="btn btn--primary" type="button" id="openAddBooks">Add Books</button>
     </div>
+
+    <section class="add-books-card" id="addBooksPanel" hidden>
+      <div class="add-books-card__head">
+        <div>
+          <p class="section-kicker">Add books</p>
+          <h2>Search the catalog and save books to your library</h2>
+        </div>
+        <button class="btn btn--ghost btn--sm" type="button" id="closeAddBooks">Close</button>
+      </div>
+      <div class="library-search">
+        <label for="catalogBookSearch">Book title, author, or ISBN</label>
+        <div class="library-search__row">
+          <input type="search" id="catalogBookSearch" placeholder="Try Dune, Octavia Butler, or an ISBN">
+          <button class="btn btn--primary" type="button" id="runCatalogSearch">Search</button>
+        </div>
+      </div>
+      <div class="catalog-results" id="catalogResults" aria-live="polite"></div>
+    </section>
 
     <section class="import-card" id="goodreadsImport" hidden>
       <div class="import-card__head">
@@ -146,8 +164,8 @@
       {% empty %}
       <div class="empty-library">
         <h2>No books yet</h2>
-        <p>Add a book to your tree and it will appear here automatically.</p>
-        <a class="btn btn--primary" href="{% url 'tree:tree' %}">Open My Tree</a>
+        <p>Search the catalog or import your Goodreads library to start building your shelves.</p>
+        <button class="btn btn--primary" type="button" id="emptyAddBooks">Add Books</button>
       </div>
       {% endfor %}
     </div>
