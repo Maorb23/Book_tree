@@ -53,6 +53,32 @@
       <button class="btn btn--primary" type="button" id="openAddBooks">Add Books</button>
     </div>
 
+    <section class="auto-tree-card">
+      <div class="auto-tree-card__copy">
+        <p class="section-kicker">Auto tree</p>
+        <h2>Create a branch from a shelf</h2>
+        <p>Pick up to 15 books and Readwoods will group them by author in your tree.</p>
+      </div>
+      <div class="auto-tree-card__controls">
+        <select id="autoTreeShelf" aria-label="Shelf to create a tree from">
+          <option value="">Choose shelf</option>
+          {% for value, label in shelf_choices %}
+            {% if value != 'all' %}
+              <option value="standard:{{ value }}">{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+          {% for shelf in custom_shelves %}
+            <option value="custom:{{ shelf.custom_shelf|escape }}">{{ shelf.custom_shelf }}</option>
+          {% endfor %}
+        </select>
+        <select id="autoTreeMode" aria-label="Auto tree grouping mode">
+          <option value="author">Authors</option>
+        </select>
+        <button class="btn btn--primary" type="button" id="createAutoTree">Create Tree</button>
+      </div>
+      <div class="auto-tree-card__status" id="autoTreeStatus" aria-live="polite"></div>
+    </section>
+
     <section class="add-books-card" id="addBooksPanel" hidden>
       <div class="add-books-card__head">
         <div>
@@ -111,6 +137,19 @@
             <tbody id="importPreviewRows"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section class="recommendations-card">
+      <div class="recommendations-card__head">
+        <div>
+          <p class="section-kicker">For your next branch</p>
+          <h2>Books you may like</h2>
+        </div>
+        <button class="btn btn--ghost btn--sm" type="button" id="refreshRecommendations">Refresh</button>
+      </div>
+      <div class="recommendation-grid" id="recommendationGrid" aria-live="polite">
+        <p class="recommendation-message">Finding matches from your shelves...</p>
       </div>
     </section>
 

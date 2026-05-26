@@ -425,6 +425,116 @@ class GoodreadsImportTests(TestCase):
         node = Node.objects.get(user=self.user, title='Dune')
         self.assertEqual(node.parent, parent)
 
+    def test_auto_tree_from_shelf_rejects_more_than_fifteen_books(self):
+        for index in range(16):
+            ImportedBook.objects.create(
+                user=self.user,
+                title=f'Book {index}',
+                author='Shared Author',
+                custom_shelf='postmodern',
+            )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['max_books'], 15)
+
+    @patch('tree.views._search_authors_open_library')
+    @patch('tree.views._search_books_combined', return_value=[])
+    def test_auto_tree_from_shelf_groups_books_under_authors(self, mock_book_search, mock_author_search):
+        mock_author_search.return_value = [{
+            'title': 'Thomas Pynchon',
+            'node_type': 'author',
+            'year': '1937',
+            'cover_url': 'https://example.com/pynchon.jpg',
+            'description': 'Gravitys Rainbow',
+        }]
+        ImportedBook.objects.create(
+            user=self.user,
+            title='The Crying of Lot 49',
+            author='Thomas Pynchon',
+            custom_shelf='postmodern',
+            isbn='9780060913076',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        author = Node.objects.get(user=self.user, node_type='author', title='Thomas Pynchon')
+        book = Node.objects.get(user=self.user, node_type='book', title='The Crying of Lot 49')
+        self.assertEqual(book.parent, author)
+        self.assertEqual(author.year, 1937)
+        self.assertEqual(TreeVersion.objects.filter(user=self.user, reason='auto_tree').count(), 1)
+
+    @patch('tree.views._search_authors_open_library', return_value=[])
+    @patch('tree.views._search_books_combined', return_value=[])
+    def test_auto_tree_from_shelf_is_idempotent(self, mock_book_search, mock_author_search):
+        ImportedBook.objects.create(
+            user=self.user,
+            title='White Noise',
+            author='Don DeLillo',
+            custom_shelf='postmodern',
+            isbn='9780143105985',
+        )
+
+        payload = json.dumps({
+            'shelf': 'postmodern',
+            'shelf_type': 'custom',
+            'mode': 'author',
+        })
+        first = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=payload,
+            content_type='application/json',
+        )
+        second = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=payload,
+            content_type='application/json',
+        )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(Node.objects.filter(user=self.user, node_type='author', title='Don DeLillo').count(), 1)
+        self.assertEqual(Node.objects.filter(user=self.user, node_type='book', title='White Noise').count(), 1)
+        self.assertEqual(second.json()['reused_books'], 1)
+
+    @patch('tree.views._search_books_combined', return_value=[])
+    def test_recommendations_exclude_books_already_in_my_books(self, mock_book_search):
+        Node.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            genre='Fiction - Science Fiction',
+            node_type='book',
+            isbn='9780441172719',
+            shelf=Node.SHELF_READ,
+            rating=5,
+        )
+
+        response = self.client.get(reverse('tree:api-my-books-recommendations'))
+
+        self.assertEqual(response.status_code, 200)
+        titles = {book['title'] for book in response.json()['results']}
+        self.assertNotIn('Dune', titles)
+        self.assertIn('The Left Hand of Darkness', titles)
+
     def test_challenge_target_can_be_updated(self):
         response = self.client.post(
             reverse('tree:api-challenge-target'),

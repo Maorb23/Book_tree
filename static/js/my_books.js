@@ -15,6 +15,12 @@
   const catalogSearch = document.getElementById('catalogBookSearch');
   const catalogResults = document.getElementById('catalogResults');
   const runCatalogSearch = document.getElementById('runCatalogSearch');
+  const autoTreeShelf = document.getElementById('autoTreeShelf');
+  const autoTreeMode = document.getElementById('autoTreeMode');
+  const createAutoTree = document.getElementById('createAutoTree');
+  const autoTreeStatus = document.getElementById('autoTreeStatus');
+  const recommendationGrid = document.getElementById('recommendationGrid');
+  const refreshRecommendations = document.getElementById('refreshRecommendations');
   let activeFilter = 'all';
   let previewBooks = [];
   let catalogSearchTimer = null;
@@ -164,6 +170,138 @@
       shelf: 'want_to_read',
     };
   }
+
+  function recommendationPayload(book) {
+    return {
+      ...bookPayload(book),
+      source_key: book.isbn || `recommendation:${book.title || ''}:${book.author || ''}`,
+      cover_image: book.cover_url || book.cover_image || '',
+      notes: book.description || book.reason || '',
+    };
+  }
+
+  function renderAutoTreeStatus(message, tone) {
+    if (!autoTreeStatus) return;
+    autoTreeStatus.textContent = message || '';
+    autoTreeStatus.classList.toggle('is-error', tone === 'error');
+    autoTreeStatus.classList.toggle('is-success', tone === 'success');
+  }
+
+  async function runAutoTreeGeneration() {
+    if (!autoTreeShelf || !createAutoTree) return;
+    const rawValue = autoTreeShelf.value || '';
+    if (!rawValue) {
+      renderAutoTreeStatus('Choose a shelf first.', 'error');
+      autoTreeShelf.focus();
+      return;
+    }
+    const separator = rawValue.indexOf(':');
+    const shelfType = separator >= 0 ? rawValue.slice(0, separator) : 'custom';
+    const shelf = separator >= 0 ? rawValue.slice(separator + 1) : rawValue;
+
+    createAutoTree.disabled = true;
+    createAutoTree.textContent = 'Creating...';
+    renderAutoTreeStatus('Searching book and author metadata, then shaping your tree...');
+    try {
+      const res = await fetch('/api/tree/auto-from-shelf/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({
+          shelf,
+          shelf_type: shelfType,
+          mode: autoTreeMode?.value || 'author',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Could not create an auto tree from this shelf.');
+      const summary = [
+        `${data.created_authors || 0} authors created`,
+        `${data.created_books || 0} books added`,
+        `${data.reused_books || 0} books reused`,
+      ].join(', ');
+      renderAutoTreeStatus(`Tree created: ${summary}.`, 'success');
+      showToast('Auto tree created. Open My Tree to see it.');
+    } catch (error) {
+      renderAutoTreeStatus(error.message || 'Could not create an auto tree from this shelf.', 'error');
+      showToast(error.message || 'Could not create this tree.');
+    } finally {
+      createAutoTree.disabled = false;
+      createAutoTree.textContent = 'Create Tree';
+    }
+  }
+
+  createAutoTree?.addEventListener('click', runAutoTreeGeneration);
+
+  function renderRecommendations(results, message) {
+    if (!recommendationGrid) return;
+    if (message) {
+      recommendationGrid.innerHTML = `<p class="recommendation-message">${escapeHtml(message)}</p>`;
+      return;
+    }
+    if (!results.length) {
+      recommendationGrid.innerHTML = '<p class="recommendation-message">Add or rate a few books and recommendations will get sharper.</p>';
+      return;
+    }
+    recommendationGrid.innerHTML = results.map((book, index) => {
+      const cover = book.cover_url
+        ? `<img src="${escapeHtml(book.cover_url)}" alt="">`
+        : `<span>${escapeHtml((book.title || 'B').slice(0, 1))}</span>`;
+      const meta = [book.author || 'Unknown author', book.genre, book.year].filter(Boolean).map(escapeHtml).join(' &middot; ');
+      return `
+        <article class="recommendation-book">
+          <div class="recommendation-book__cover">${cover}</div>
+          <div class="recommendation-book__body">
+            <h3>${escapeHtml(book.title || 'Untitled')}</h3>
+            <p>${meta}</p>
+            <span>${escapeHtml(book.reason || 'Based on your library')}</span>
+          </div>
+          <button class="btn btn--primary btn--sm add-recommendation-book" type="button" data-index="${index}">Add</button>
+        </article>
+      `;
+    }).join('');
+
+    recommendationGrid.querySelectorAll('.add-recommendation-book').forEach(button => {
+      button.addEventListener('click', async () => {
+        const book = results[Number(button.dataset.index)];
+        if (!book) return;
+        button.disabled = true;
+        button.textContent = 'Adding...';
+        try {
+          const res = await fetch('/api/my-books/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+            body: JSON.stringify(recommendationPayload(book)),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || 'Could not add this recommendation.');
+          showToast('Recommendation added to My Books.');
+          window.location.reload();
+        } catch (error) {
+          showToast(error.message || 'Could not add this recommendation.');
+          button.disabled = false;
+          button.textContent = 'Add';
+        }
+      });
+    });
+  }
+
+  async function loadRecommendations() {
+    if (!recommendationGrid) return;
+    renderRecommendations([], 'Finding matches from your shelves...');
+    if (refreshRecommendations) refreshRecommendations.disabled = true;
+    try {
+      const res = await fetch('/api/my-books/recommendations/', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Could not load recommendations.');
+      renderRecommendations(data.results || []);
+    } catch (error) {
+      renderRecommendations([], error.message || 'Could not load recommendations right now.');
+    } finally {
+      if (refreshRecommendations) refreshRecommendations.disabled = false;
+    }
+  }
+
+  refreshRecommendations?.addEventListener('click', loadRecommendations);
 
   function renderCatalogResults(results, message) {
     if (!catalogResults) return;
@@ -463,4 +601,5 @@
   cards.forEach(syncReadingControls);
   syncShelfTabs();
   applyFilters();
+  loadRecommendations();
 })();

@@ -47,6 +47,7 @@ from .forms import EmailUserCreationForm
 
 
 logger = logging.getLogger(__name__)
+AUTO_TREE_MAX_BOOKS = 15
 
 
 # ──────────────────────────────────────────────
@@ -775,6 +776,48 @@ def _invalidate_tree_cache(user_id):
     cache.delete(f'tree-data:v1:user:{user_id}')
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def tree_auto_from_shelf(request):
+    shelf = (request.data.get('shelf') or '').strip()
+    shelf_type = (request.data.get('shelf_type') or 'custom').strip().lower()
+    mode = (request.data.get('mode') or 'author').strip().lower()
+
+    if not shelf:
+        return Response({'detail': 'Choose a shelf first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    books = _get_library_books_for_shelf(request.user, shelf, shelf_type)
+    if not books:
+        return Response({'detail': 'No books were found on this shelf.'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(books) > AUTO_TREE_MAX_BOOKS:
+        return Response(
+            {
+                'detail': f'Auto tree generation supports up to {AUTO_TREE_MAX_BOOKS} books at a time.',
+                'book_count': len(books),
+                'max_books': AUTO_TREE_MAX_BOOKS,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    strategy = _auto_tree_strategy(mode)
+    if strategy is None:
+        return Response({'detail': 'This tree grouping mode is not available yet.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        _create_tree_version(request.user, f'Before auto tree from {shelf}', 'auto_tree')
+        result = strategy.generate(request.user, books)
+
+    _invalidate_tree_cache(request.user.id)
+    return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_books_recommendations(request):
+    recommendations = _get_user_book_recommendations(request.user)
+    return Response({'results': recommendations})
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tree_version_list(request):
@@ -979,6 +1022,498 @@ def library_book_create(request):
         notes=book.get('notes') or '',
     )
     return Response(ImportedBookSerializer(imported_book).data, status=status.HTTP_201_CREATED)
+
+
+def _auto_tree_strategy(mode):
+    strategies = {
+        'author': AuthorAutoTreeStrategy(),
+    }
+    return strategies.get(mode)
+
+
+class AuthorAutoTreeStrategy:
+    mode = 'author'
+
+    def generate(self, user, books):
+        created_author_count = 0
+        reused_author_count = 0
+        created_book_count = 0
+        reused_book_count = 0
+        connected_count = 0
+        skipped = []
+
+        for index, source_book in enumerate(books):
+            source_payload = _library_book_to_payload(source_book)
+            enriched_book = _enrich_book_for_auto_tree(source_payload)
+            authors = _split_author_names(enriched_book.get('author') or source_payload.get('author'))
+            if not authors:
+                skipped.append({
+                    'title': source_payload.get('title') or 'Untitled',
+                    'reason': 'No author was found.',
+                })
+                continue
+
+            author_nodes = []
+            for author_name in authors:
+                author_payload = _enrich_author_for_auto_tree(author_name)
+                author_node, created = _get_or_create_author_node(user, author_payload, index)
+                author_nodes.append(author_node)
+                if created:
+                    created_author_count += 1
+                else:
+                    reused_author_count += 1
+
+            primary_author = author_nodes[0]
+            book_node, created = _get_or_create_tree_book_from_library(
+                user,
+                enriched_book,
+                source_book,
+                primary_author,
+                index,
+            )
+            if created:
+                created_book_count += 1
+            else:
+                reused_book_count += 1
+
+            for author_node in author_nodes[1:]:
+                _, edge_created = Edge.objects.get_or_create(
+                    user=user,
+                    source=author_node,
+                    target=book_node,
+                    edge_type='author',
+                    defaults={
+                        'label': f'{author_node.title} wrote {book_node.title}',
+                        'style': {
+                            'color': '#c4b5fd',
+                            'line_style': 'dash-dot',
+                            'width': 3,
+                        },
+                    },
+                )
+                if edge_created:
+                    connected_count += 1
+
+        return {
+            'mode': self.mode,
+            'book_count': len(books),
+            'created_authors': created_author_count,
+            'reused_authors': reused_author_count,
+            'created_books': created_book_count,
+            'reused_books': reused_book_count,
+            'created_edges': connected_count,
+            'skipped': skipped,
+        }
+
+
+def _get_library_books(user):
+    tree_books = list(Node.objects.filter(user=user, node_type='book').order_by('date_added'))
+    imported_books = list(ImportedBook.objects.filter(user=user).order_by('date_added'))
+    return tree_books + imported_books
+
+
+def _get_library_books_for_shelf(user, shelf, shelf_type):
+    shelf_norm = _normalize_text(shelf)
+    valid_shelves = {value for value, _ in Node.SHELF_CHOICES}
+    books = _get_library_books(user)
+
+    if shelf_type == 'all' or shelf_norm == 'all':
+        return _dedupe_library_books(books)
+    if shelf_type == 'standard' or shelf in valid_shelves:
+        return _dedupe_library_books([book for book in books if book.shelf == shelf])
+    return _dedupe_library_books([
+        book for book in books
+        if _normalize_text(getattr(book, 'custom_shelf', '')) == shelf_norm
+    ])
+
+
+def _dedupe_library_books(books):
+    deduped = []
+    seen = set()
+    for book in books:
+        isbn = _normalize_goodreads_isbn(getattr(book, 'isbn', ''))
+        key = f'isbn:{isbn}' if isbn else _book_key(getattr(book, 'title', ''), getattr(book, 'author', ''))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(book)
+    return deduped
+
+
+def _library_book_to_payload(book):
+    return {
+        'title': book.title,
+        'author': book.author,
+        'genre': getattr(book, 'genre', ''),
+        'series': getattr(book, 'series', ''),
+        'year': book.year,
+        'rating': book.rating,
+        'isbn': book.isbn,
+        'cover_image': getattr(book, 'cover_image', ''),
+        'description': getattr(book, 'description', '') or getattr(book, 'notes', ''),
+        'notes': getattr(book, 'notes', ''),
+        'shelf': book.shelf,
+        'custom_shelf': book.custom_shelf,
+        'date_read': book.date_read,
+    }
+
+
+def _split_author_names(author_value):
+    author_text = str(author_value or '').strip()
+    if not author_text or author_text.lower() == 'unknown author':
+        return []
+    pieces = re.split(r'\s+(?:and|&)\s+|;', author_text)
+    authors = []
+    for piece in pieces:
+        for value in str(piece or '').split(','):
+            cleaned = value.strip()
+            if cleaned and _normalize_text(cleaned) not in {'unknown author', 'author'}:
+                authors.append(cleaned[:255])
+    seen = set()
+    unique = []
+    for author in authors:
+        key = _normalize_text(author)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(author)
+    return unique
+
+
+def _enrich_book_for_auto_tree(book):
+    title = book.get('title') or ''
+    author = book.get('author') or ''
+    query = f'{title} {author}'.strip()
+    if len(query) < 2:
+        return book
+
+    cache_key = _cache_key('auto-tree:book:v1', query.lower())
+    cached = cache.get(cache_key)
+    if cached is None:
+        try:
+            cached = _search_books_combined(query)[:4]
+        except Exception:
+            logger.exception('Auto tree book lookup failed for query=%r', query)
+            cached = []
+        cache.set(cache_key, cached, timeout=60 * 60 * 24)
+
+    best = _best_catalog_match(book, cached)
+    if not best:
+        return book
+    return {
+        **book,
+        'title': best.get('title') or book.get('title') or '',
+        'author': best.get('author') or book.get('author') or '',
+        'genre': best.get('genre') or book.get('genre') or '',
+        'year': _safe_int(best.get('year')) or book.get('year'),
+        'isbn': best.get('isbn') or book.get('isbn') or '',
+        'cover_image': best.get('cover_url') or best.get('cover_image') or book.get('cover_image') or '',
+        'description': best.get('description') or book.get('description') or '',
+    }
+
+
+def _best_catalog_match(book, candidates):
+    if not candidates:
+        return None
+    title = _normalize_text(book.get('title'))
+    author = _normalize_text(book.get('author'))
+    isbn = _normalize_goodreads_isbn(book.get('isbn'))
+    ranked = []
+    for candidate in candidates:
+        score = 0
+        if isbn and _normalize_goodreads_isbn(candidate.get('isbn')) == isbn:
+            score += 100
+        if title and _normalize_text(candidate.get('title')) == title:
+            score += 80
+        if author and _normalize_text(candidate.get('author')) == author:
+            score += 50
+        score += _book_rank(candidate, f"{book.get('title') or ''} {book.get('author') or ''}")
+        ranked.append((score, candidate))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return ranked[0][1] if ranked and ranked[0][0] > 0 else candidates[0]
+
+
+def _enrich_author_for_auto_tree(author_name):
+    payload = {
+        'title': author_name,
+        'author': 'Author',
+        'node_type': 'author',
+        'year': None,
+        'cover_url': '',
+        'description': '',
+    }
+    cache_key = _cache_key('auto-tree:author:v1', author_name.lower())
+    cached = cache.get(cache_key)
+    if cached is None:
+        try:
+            cached = _search_authors_open_library(author_name)[:3]
+        except Exception:
+            logger.exception('Auto tree author lookup failed for query=%r', author_name)
+            cached = []
+        cache.set(cache_key, cached, timeout=60 * 60 * 24)
+
+    if cached:
+        exact = next(
+            (row for row in cached if _normalize_text(row.get('title')) == _normalize_text(author_name)),
+            cached[0],
+        )
+        payload.update({
+            'title': exact.get('title') or author_name,
+            'year': _safe_int(exact.get('year')),
+            'cover_url': exact.get('cover_url') or '',
+            'description': exact.get('description') or '',
+        })
+    return payload
+
+
+def _get_or_create_author_node(user, author_payload, index=0):
+    title = (author_payload.get('title') or '').strip()[:255]
+    title_norm = _normalize_text(title)
+    for node in Node.objects.filter(user=user, node_type='author'):
+        if _normalize_text(node.title) == title_norm:
+            changed = []
+            if author_payload.get('cover_url') and not node.cover_image:
+                node.cover_image = author_payload['cover_url']
+                changed.append('cover_image')
+            if author_payload.get('description') and not node.description:
+                node.description = author_payload['description'][:1000]
+                changed.append('description')
+            if author_payload.get('year') and not node.year:
+                node.year = author_payload['year']
+                changed.append('year')
+            if changed:
+                node.save(update_fields=changed)
+            return node, False
+
+    node = Node.objects.create(
+        user=user,
+        title=title or 'Unknown author',
+        node_type='author',
+        author='Author',
+        year=author_payload.get('year'),
+        description=(author_payload.get('description') or '')[:1000],
+        cover_image=author_payload.get('cover_url') or '',
+        pos_x=index * 280,
+        pos_y=0,
+        style={
+            'color': '#263f32',
+            'glow': '#8ed18b',
+            'border': '#9dcc7a',
+        },
+    )
+    return node, True
+
+
+def _get_or_create_tree_book_from_library(user, book_payload, source_book, parent, index=0):
+    existing = _find_existing_tree_book(user, book_payload)
+    if existing:
+        changed = []
+        if existing.parent_id != parent.id:
+            existing.parent = parent
+            changed.append('parent')
+        if existing.pos_x is not None or existing.pos_y is not None:
+            existing.pos_x = None
+            existing.pos_y = None
+            changed.extend(['pos_x', 'pos_y'])
+        for field, value in {
+            'author': book_payload.get('author') or existing.author,
+            'genre': book_payload.get('genre') or existing.genre,
+            'year': book_payload.get('year') or existing.year,
+            'isbn': book_payload.get('isbn') or existing.isbn,
+            'cover_image': book_payload.get('cover_image') or existing.cover_image,
+            'description': book_payload.get('description') or existing.description,
+        }.items():
+            if value and getattr(existing, field) != value:
+                setattr(existing, field, value)
+                changed.append(field)
+        if changed:
+            existing.save(update_fields=sorted(set(changed)))
+        return existing, False
+
+    node = Node.objects.create(
+        user=user,
+        node_type='book',
+        title=(book_payload.get('title') or 'Untitled')[:255],
+        author=(book_payload.get('author') or '')[:255],
+        genre=(book_payload.get('genre') or '')[:100],
+        series=(book_payload.get('series') or '')[:255],
+        year=book_payload.get('year'),
+        rating=book_payload.get('rating'),
+        isbn=(book_payload.get('isbn') or '')[:20],
+        cover_image=(book_payload.get('cover_image') or '')[:1000],
+        description=book_payload.get('description') or '',
+        parent=parent,
+        shelf=getattr(source_book, 'shelf', book_payload.get('shelf') or Node.SHELF_WANT_TO_READ),
+        custom_shelf=getattr(source_book, 'custom_shelf', book_payload.get('custom_shelf') or ''),
+        date_read=getattr(source_book, 'date_read', book_payload.get('date_read')),
+        notes=getattr(source_book, 'notes', book_payload.get('notes') or ''),
+    )
+    return node, True
+
+
+def _get_user_book_recommendations(user, limit=8):
+    cache_key = _cache_key(
+        f'my-books:recommendations:v2:user:{user.id}:limit:{limit}',
+        _library_state_token(user),
+    )
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    library_books = _get_library_books(user)
+    existing_keys = {
+        _book_key(book.title, book.author)
+        for book in library_books
+    }
+    existing_isbns = {
+        _normalize_goodreads_isbn(book.isbn)
+        for book in library_books
+        if _normalize_goodreads_isbn(book.isbn)
+    }
+    profile = _recommendation_profile(library_books)
+    candidates = _recommendation_candidates(profile)
+
+    scored = []
+    seen = set()
+    for candidate in candidates:
+        key = _book_key(candidate.get('title'), candidate.get('author'))
+        isbn = _normalize_goodreads_isbn(candidate.get('isbn'))
+        if not key or key in seen or key in existing_keys or (isbn and isbn in existing_isbns):
+            continue
+        seen.add(key)
+        score, reason = _score_recommendation(candidate, profile)
+        if score <= 0:
+            continue
+        row = {
+            'title': candidate.get('title') or '',
+            'author': candidate.get('author') or 'Unknown author',
+            'genre': candidate.get('genre') or '',
+            'year': candidate.get('year') or '',
+            'isbn': candidate.get('isbn') or '',
+            'cover_url': candidate.get('cover_url') or candidate.get('cover_image') or '',
+            'description': candidate.get('description') or '',
+            'reason': reason,
+            'score': score,
+        }
+        scored.append(row)
+
+    scored.sort(key=lambda row: row['score'], reverse=True)
+    results = scored[:limit]
+    cache.set(cache_key, results, timeout=60 * 30)
+    return results
+
+
+def _library_state_token(user):
+    tree_count = Node.objects.filter(user=user, node_type='book').count()
+    imported_count = ImportedBook.objects.filter(user=user).count()
+    tree_latest = Node.objects.filter(user=user, node_type='book').order_by('-date_added').values_list('date_added', flat=True).first()
+    imported_latest = ImportedBook.objects.filter(user=user).order_by('-date_added').values_list('date_added', flat=True).first()
+    return f'{tree_count}:{imported_count}:{tree_latest or ""}:{imported_latest or ""}'
+
+
+def _recommendation_profile(books):
+    author_counts = Counter()
+    genre_counts = Counter()
+    keyword_counts = Counter()
+
+    for book in books:
+        shelf = getattr(book, 'shelf', '')
+        weight = 3 if shelf in {Node.SHELF_READ, Node.SHELF_CURRENTLY_READING} else 1
+        rating = getattr(book, 'rating', None)
+        if rating and rating >= 4:
+            weight += 2
+        for author in _split_author_names(getattr(book, 'author', '')):
+            author_counts[author] += weight
+        genre = _genre_label(getattr(book, 'genre', ''))
+        if genre:
+            genre_counts[genre] += weight
+        text = f"{getattr(book, 'title', '')} {getattr(book, 'notes', '')} {getattr(book, 'description', '')}"
+        for token in _recommendation_keywords(text):
+            keyword_counts[token] += 1
+
+    return {
+        'authors': author_counts,
+        'genres': genre_counts,
+        'keywords': keyword_counts,
+    }
+
+
+def _recommendation_keywords(text):
+    stop_words = {
+        'the', 'and', 'for', 'with', 'from', 'that', 'this', 'book', 'novel',
+        'story', 'read', 'about', 'into', 'your', 'their', 'they', 'them',
+    }
+    tokens = _normalize_text(text).split()
+    return [token for token in tokens if len(token) > 3 and token not in stop_words][:20]
+
+
+def _recommendation_candidates(profile):
+    candidates = []
+    for book in _curated_landing_books():
+        candidates.append(book)
+
+    queries = []
+    for author, _ in profile['authors'].most_common(3):
+        queries.append(author)
+    for genre, _ in profile['genres'].most_common(3):
+        queries.append(genre)
+    for keyword, _ in profile['keywords'].most_common(2):
+        queries.append(keyword)
+
+    for query in queries[:6]:
+        cache_key = _cache_key('recommendation-search:v1', query.lower())
+        rows = cache.get(cache_key)
+        if rows is None:
+            try:
+                rows = _search_books_combined(query)[:6]
+            except Exception:
+                logger.exception('Recommendation lookup failed for query=%r', query)
+                rows = []
+            cache.set(cache_key, rows, timeout=60 * 60 * 24)
+        candidates.extend(rows)
+    return candidates
+
+
+def _score_recommendation(candidate, profile):
+    author = candidate.get('author') or ''
+    genre = _genre_label(candidate.get('genre') or '')
+    title = candidate.get('title') or ''
+    score = 1
+    reasons = []
+
+    for author_name in _split_author_names(author):
+        author_weight = profile['authors'].get(author_name, 0)
+        if not author_weight:
+            author_weight = profile['authors'].get(_matching_counter_key(profile['authors'], author_name), 0)
+        if author_weight:
+            score += 8 + author_weight
+            reasons.append(f'Because you read {author_name}')
+            break
+
+    genre_weight = profile['genres'].get(genre, 0)
+    if genre and genre_weight:
+        score += 5 + genre_weight
+        reasons.append(f'More {genre}')
+
+    title_tokens = set(_recommendation_keywords(title))
+    keyword_hits = title_tokens.intersection(profile['keywords'])
+    if keyword_hits:
+        score += min(4, len(keyword_hits))
+        if not reasons:
+            reasons.append('Matches themes in your library')
+
+    if candidate.get('cover_url') or candidate.get('cover_image'):
+        score += 1
+
+    return score, reasons[0] if reasons else 'Based on your reading shelf'
+
+
+def _matching_counter_key(counter, value):
+    value_norm = _normalize_text(value)
+    for key in counter:
+        if _normalize_text(key) == value_norm:
+            return key
+    return ''
 
 
 def _create_tree_version(user, label, reason='manual'):
