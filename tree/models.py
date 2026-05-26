@@ -5,6 +5,24 @@ from django.db.models import Q
 import uuid
 
 
+class Tree(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trees')
+    name = models.CharField(max_length=160)
+    description = models.CharField(max_length=280, blank=True)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+        indexes = [
+            models.Index(fields=['user', 'is_default'], name='tree_user_default_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+
 class Node(models.Model):
     SHELF_ALL = "all"
     SHELF_WANT_TO_READ = "want_to_read"
@@ -29,6 +47,7 @@ class Node(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='nodes')
+    tree = models.ForeignKey(Tree, null=True, blank=True, on_delete=models.CASCADE, related_name='nodes')
     title = models.CharField(max_length=255)
     node_type = models.CharField(max_length=20, choices=NODE_TYPES, default="book")
 
@@ -70,10 +89,19 @@ class Node(models.Model):
         ordering = ['date_added']
         indexes = [
             models.Index(fields=['user', 'date_added'], name='tree_node_user_date_idx'),
+            models.Index(fields=['tree', 'date_added'], name='tree_node_tree_date_idx'),
         ]
 
     def __str__(self):
         return f"{self.title} ({self.node_type})"
+
+    def save(self, *args, **kwargs):
+        if self.user_id and not self.tree_id:
+            tree = Tree.objects.filter(user_id=self.user_id, is_default=True).first()
+            if tree is None:
+                tree = Tree.objects.create(user_id=self.user_id, name='Main Tree', is_default=True)
+            self.tree = tree
+        return super().save(*args, **kwargs)
 
     def get_cover_url(self):
         """Return best available cover image URL."""
@@ -131,6 +159,7 @@ class ImportedBook(models.Model):
 
 class TreeVersion(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tree_versions')
+    tree = models.ForeignKey(Tree, null=True, blank=True, on_delete=models.CASCADE, related_name='versions')
     label = models.CharField(max_length=180)
     reason = models.CharField(max_length=80, blank=True)
     snapshot = models.JSONField(default=dict)
@@ -140,6 +169,7 @@ class TreeVersion(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['user', 'created_at'], name='tree_version_user_date_idx'),
+            models.Index(fields=['tree', 'created_at'], name='tree_version_tree_date_idx'),
         ]
 
     def __str__(self):
@@ -194,6 +224,7 @@ class Edge(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='edges')
+    tree = models.ForeignKey(Tree, null=True, blank=True, on_delete=models.CASCADE, related_name='edges')
     source = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="edges_from")
     target = models.ForeignKey(Node, on_delete=models.CASCADE, related_name="edges_to")
     edge_type = models.CharField(max_length=20, choices=EDGE_TYPES, default="progression")
@@ -201,13 +232,20 @@ class Edge(models.Model):
     style = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        unique_together = ('user', 'source', 'target', 'edge_type')
+        unique_together = ('user', 'tree', 'source', 'target', 'edge_type')
         indexes = [
             models.Index(fields=['user', 'edge_type'], name='tree_edge_user_type_idx'),
+            models.Index(fields=['tree', 'edge_type'], name='tree_edge_tree_type_idx'),
         ]
 
     def __str__(self):
         return f"{self.source.title} → {self.target.title} ({self.edge_type})"
+
+
+    def save(self, *args, **kwargs):
+        if not self.tree_id and self.source_id:
+            self.tree = self.source.tree
+        return super().save(*args, **kwargs)
 
 
 class UserProfile(models.Model):

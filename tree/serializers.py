@@ -1,6 +1,19 @@
 from rest_framework import serializers
 from django.db.models import Q
-from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, TreeVersion
+from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, Tree, TreeVersion
+
+
+class TreeSerializer(serializers.ModelSerializer):
+    node_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tree
+        fields = ['id', 'name', 'description', 'is_default', 'created_at', 'updated_at', 'node_count']
+
+    def get_node_count(self, obj):
+        if hasattr(obj, 'node_count'):
+            return obj.node_count
+        return obj.nodes.count()
 
 
 class NodeSerializer(serializers.ModelSerializer):
@@ -10,7 +23,7 @@ class NodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Node
         fields = [
-            'id', 'title', 'node_type', 'author', 'genre', 'series',
+            'id', 'tree', 'title', 'node_type', 'author', 'genre', 'series',
             'year', 'description', 'rating', 'isbn',
             'cover_image', 'cover_url',
             'parent', 'pos_x', 'pos_y',
@@ -38,6 +51,13 @@ class NodeSerializer(serializers.ModelSerializer):
             parent = attrs.get('parent')
             if parent and parent.user_id != request.user.id:
                 raise serializers.ValidationError({'parent': 'Parent must belong to the current user.'})
+            tree = attrs.get('tree')
+            if tree and tree.user_id != request.user.id:
+                raise serializers.ValidationError({'tree': 'Tree must belong to the current user.'})
+            instance = getattr(self, 'instance', None)
+            target_tree = tree or getattr(instance, 'tree', None)
+            if parent and target_tree and parent.tree_id and parent.tree_id != target_tree.id:
+                raise serializers.ValidationError({'parent': 'Parent must belong to the same tree.'})
 
         parent = attrs.get('parent', serializers.empty)
         if parent is serializers.empty:
@@ -65,7 +85,7 @@ class NodeSerializer(serializers.ModelSerializer):
 class EdgeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Edge
-        fields = ['id', 'source', 'target', 'edge_type', 'label', 'style']
+        fields = ['id', 'tree', 'source', 'target', 'edge_type', 'label', 'style']
 
 
 class ImportedBookSerializer(serializers.ModelSerializer):

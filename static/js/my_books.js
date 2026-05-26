@@ -17,6 +17,8 @@
   const runCatalogSearch = document.getElementById('runCatalogSearch');
   const autoTreeShelf = document.getElementById('autoTreeShelf');
   const autoTreeMode = document.getElementById('autoTreeMode');
+  const autoTreeDestination = document.getElementById('autoTreeDestination');
+  const autoTreeName = document.getElementById('autoTreeName');
   const createAutoTree = document.getElementById('createAutoTree');
   const autoTreeStatus = document.getElementById('autoTreeStatus');
   const recommendationGrid = document.getElementById('recommendationGrid');
@@ -198,6 +200,10 @@
     const separator = rawValue.indexOf(':');
     const shelfType = separator >= 0 ? rawValue.slice(0, separator) : 'custom';
     const shelf = separator >= 0 ? rawValue.slice(separator + 1) : rawValue;
+    const destinationValue = autoTreeDestination?.value || 'new';
+    const destinationSeparator = destinationValue.indexOf(':');
+    const destination = destinationSeparator >= 0 ? destinationValue.slice(0, destinationSeparator) : destinationValue;
+    const treeId = destinationSeparator >= 0 ? destinationValue.slice(destinationSeparator + 1) : '';
 
     createAutoTree.disabled = true;
     createAutoTree.textContent = 'Creating...';
@@ -210,6 +216,9 @@
           shelf,
           shelf_type: shelfType,
           mode: autoTreeMode?.value || 'author',
+          destination,
+          tree_id: treeId,
+          tree_name: autoTreeName?.value || '',
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -231,6 +240,10 @@
   }
 
   createAutoTree?.addEventListener('click', runAutoTreeGeneration);
+  autoTreeDestination?.addEventListener('change', () => {
+    if (!autoTreeName) return;
+    autoTreeName.hidden = (autoTreeDestination.value || 'new') !== 'new';
+  });
 
   function renderRecommendations(results, message) {
     if (!recommendationGrid) return;

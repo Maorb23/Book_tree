@@ -13,7 +13,7 @@ import json
 from .email_backends import ResendEmailBackend
 from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
-    TreeVersion, ReadingChallenge, DailyPageLog,
+    Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
 from .views import _apply_known_book_metadata, _book_rank, _search_authors_open_library
 from book_tree.settings import _email_env
@@ -479,13 +479,46 @@ class GoodreadsImportTests(TestCase):
         author = Node.objects.get(user=self.user, node_type='author', title='Thomas Pynchon')
         book = Node.objects.get(user=self.user, node_type='book', title='The Crying of Lot 49')
         self.assertEqual(book.parent, author)
-        self.assertIsNone(author.year)
-        self.assertFalse(mock_author_search.called)
+        self.assertEqual(author.year, 1937)
+        self.assertEqual(author.cover_image, 'https://example.com/pynchon.jpg')
         self.assertEqual(TreeVersion.objects.filter(user=self.user, reason='auto_tree').count(), 1)
 
     @patch('tree.views._search_authors_open_library', return_value=[])
     @patch('tree.views._search_books_combined', return_value=[])
+    def test_auto_tree_from_shelf_can_create_a_separate_tree(self, mock_book_search, mock_author_search):
+        main_tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        Node.objects.create(user=self.user, tree=main_tree, title='Existing Root', node_type='custom')
+        ImportedBook.objects.create(
+            user=self.user,
+            title='White Noise',
+            author='Don DeLillo',
+            custom_shelf='postmodern',
+            isbn='9780143105985',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+                'destination': 'new',
+                'tree_name': 'Postmodern Authors',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        new_tree = Tree.objects.get(user=self.user, name='Postmodern Authors')
+        self.assertNotEqual(new_tree.id, main_tree.id)
+        self.assertEqual(Node.objects.filter(user=self.user, tree=main_tree).count(), 1)
+        self.assertTrue(Node.objects.filter(user=self.user, tree=new_tree, title='Don DeLillo').exists())
+        self.assertTrue(Node.objects.filter(user=self.user, tree=new_tree, title='White Noise').exists())
+
+    @patch('tree.views._search_authors_open_library', return_value=[])
+    @patch('tree.views._search_books_combined', return_value=[])
     def test_auto_tree_from_shelf_is_idempotent(self, mock_book_search, mock_author_search):
+        tree = Tree.objects.create(user=self.user, name='Postmodern Authors', is_default=True)
         ImportedBook.objects.create(
             user=self.user,
             title='White Noise',
@@ -498,6 +531,8 @@ class GoodreadsImportTests(TestCase):
             'shelf': 'postmodern',
             'shelf_type': 'custom',
             'mode': 'author',
+            'destination': 'existing',
+            'tree_id': tree.id,
         })
         first = self.client.post(
             reverse('tree:api-tree-auto-from-shelf'),
@@ -512,8 +547,8 @@ class GoodreadsImportTests(TestCase):
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 201)
-        self.assertEqual(Node.objects.filter(user=self.user, node_type='author', title='Don DeLillo').count(), 1)
-        self.assertEqual(Node.objects.filter(user=self.user, node_type='book', title='White Noise').count(), 1)
+        self.assertEqual(Node.objects.filter(user=self.user, tree=tree, node_type='author', title='Don DeLillo').count(), 1)
+        self.assertEqual(Node.objects.filter(user=self.user, tree=tree, node_type='book', title='White Noise').count(), 1)
         self.assertEqual(second.json()['reused_books'], 1)
 
     @patch('tree.views._search_authors_open_library', side_effect=SystemExit(1))
@@ -538,7 +573,6 @@ class GoodreadsImportTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertFalse(mock_author_search.called)
         self.assertFalse(mock_book_search.called)
         author = Node.objects.get(user=self.user, node_type='author', title='Don DeLillo')
         book = Node.objects.get(user=self.user, node_type='book', title='White Noise')

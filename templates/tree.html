@@ -103,6 +103,12 @@
       border: 1px solid var(--border); background: rgba(20, 28, 20, 0.76);
       font-size: 0.8rem; color: var(--text-light);
     }
+    .tree-switcher {
+      min-width: 150px; max-width: 220px; padding: 8px 10px; border-radius: 999px;
+      border: 1px solid var(--border); background: rgba(20, 28, 20, 0.86);
+      color: var(--text-light); font: inherit; font-size: 0.84rem;
+    }
+    .tree-switcher option { background: #1b201a; }
 
     .canvas-wrap {
       position: fixed; inset: 0; top: 68px; overflow: hidden; background: var(--bg-deep);
@@ -482,6 +488,11 @@
     </div>
     <div class="nav__links">
       <span class="nav__user">{{ request.user.username }}</span>
+      <select class="tree-switcher" id="treeSwitcher" aria-label="Current tree">
+        {% for tree in trees %}
+          <option value="{{ tree.id }}" {% if tree.id == current_tree.id %}selected{% endif %}>{{ tree.name }}</option>
+        {% endfor %}
+      </select>
       <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
       <a href="{% url 'tree:challenges' %}" class="btn btn--ghost">Challenges</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
@@ -817,6 +828,19 @@
     }
 
     window.showToast = showToast;
+    const CURRENT_TREE_ID = '{{ current_tree.id }}';
+
+    function treeApiUrl(path) {
+      const url = new URL(path, window.location.origin);
+      if (CURRENT_TREE_ID) url.searchParams.set('tree_id', CURRENT_TREE_ID);
+      return `${url.pathname}${url.search}`;
+    }
+
+    document.getElementById('treeSwitcher')?.addEventListener('change', (event) => {
+      const nextTreeId = event.target.value;
+      if (!nextTreeId) return;
+      window.location.href = `{% url 'tree:tree' %}?tree_id=${encodeURIComponent(nextTreeId)}`;
+    });
 
     let treeHasUnsavedVersion = false;
     let treeBaselineSnapshot = null;
@@ -844,7 +868,7 @@
 
     async function saveTreeVersion() {
       const label = `Saved tree - ${new Date().toLocaleString()}`;
-      const res = await fetch('/api/tree/versions/save/', {
+      const res = await fetch(treeApiUrl('/api/tree/versions/save/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
         body: JSON.stringify({ label }),
@@ -860,7 +884,7 @@
         clearTreeDirty();
         return;
       }
-      const res = await fetch('/api/tree/discard/', {
+      const res = await fetch(treeApiUrl('/api/tree/discard/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
         body: JSON.stringify({ snapshot: treeBaselineSnapshot }),
@@ -1179,7 +1203,7 @@
     async function loadTree() {
       document.getElementById('loadingOverlay').style.display = 'flex';
       try {
-        const res = await fetch('/api/tree/', {
+        const res = await fetch(treeApiUrl('/api/tree/'), {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' },
         });
@@ -2128,7 +2152,7 @@
 
       try {
         const edgeType = 'custom';
-        const res = await fetch('/api/edges/', {
+        const res = await fetch(treeApiUrl('/api/edges/'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
           body: JSON.stringify({
@@ -2168,7 +2192,7 @@
 
       try {
         const edgeType = sourceNode.node_type === 'genre' && targetNode.node_type === 'genre' ? 'genre' : 'custom';
-        const res = await fetch('/api/edges/', {
+        const res = await fetch(treeApiUrl('/api/edges/'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
           body: JSON.stringify({
@@ -2944,7 +2968,7 @@
               body: JSON.stringify(payload),
             });
           } else {
-            res = await fetch('/api/nodes/', {
+            res = await fetch(treeApiUrl('/api/nodes/'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
               body: JSON.stringify(payload),
@@ -3026,7 +3050,7 @@
         if (!treeVersionList) return;
         treeVersionList.innerHTML = '<div class="version-card"><span>Loading versions...</span></div>';
         try {
-          const res = await fetch('/api/tree/versions/');
+          const res = await fetch(treeApiUrl('/api/tree/versions/'));
           if (!res.ok) throw new Error('Could not load versions');
           const versions = await res.json();
           if (!versions.length) {
@@ -3062,7 +3086,7 @@
         button.disabled = true;
         button.textContent = 'Restoring...';
         try {
-          const res = await fetch(`/api/tree/versions/${button.dataset.versionId}/restore/`, {
+          const res = await fetch(treeApiUrl(`/api/tree/versions/${button.dataset.versionId}/restore/`), {
             method: 'POST',
             headers: { 'X-CSRFToken': getCsrf() },
           });

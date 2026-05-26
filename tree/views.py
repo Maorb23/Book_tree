@@ -40,9 +40,9 @@ from rest_framework import status
 
 from .models import (
     Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook,
-    TreeVersion, ReadingChallenge, DailyPageLog,
+    Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
-from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeVersionSerializer
+from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer
 from .forms import EmailUserCreationForm
 
 
@@ -75,14 +75,21 @@ def book_page(request):
 
 @login_required
 def tree_page(request):
-    return render(request, 'tree.html')
+    current_tree = _get_tree_from_request(request)
+    trees = Tree.objects.filter(user=request.user).annotate(node_count=Count('nodes'))
+    return render(request, 'tree.html', {
+        'trees': trees,
+        'current_tree': current_tree,
+    })
 
 
 @login_required
 def my_books(request):
+    current_tree = _get_tree_from_request(request)
     tree_books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
-    tree_parent_options = Node.objects.filter(user=request.user).order_by('node_type', 'title')
+    tree_parent_options = Node.objects.filter(user=request.user, tree=current_tree).order_by('node_type', 'title')
     imported_books = ImportedBook.objects.filter(user=request.user).order_by('title')
+    trees = Tree.objects.filter(user=request.user).annotate(node_count=Count('nodes'))
     books = sorted(
         chain(tree_books, imported_books),
         key=lambda book: (book.title or '').lower(),
@@ -106,6 +113,8 @@ def my_books(request):
         'shelf_choices': Node.SHELF_CHOICES,
         'shelf_counts': shelf_counts,
         'custom_shelves': custom_shelves,
+        'trees': trees,
+        'current_tree': current_tree,
     })
 
 
@@ -352,6 +361,37 @@ def _get_display_name(user):
     if profile and profile.display_name:
         return profile.display_name
     return user.username
+
+
+def _get_or_create_default_tree(user):
+    tree = Tree.objects.filter(user=user, is_default=True).order_by('created_at').first()
+    if tree:
+        return tree
+    tree = Tree.objects.filter(user=user).order_by('created_at').first()
+    if tree:
+        if not tree.is_default:
+            tree.is_default = True
+            tree.save(update_fields=['is_default', 'updated_at'])
+        return tree
+    return Tree.objects.create(user=user, name='Main Tree', is_default=True)
+
+
+def _get_tree_by_id_or_default(user, tree_id=None):
+    if tree_id:
+        return get_object_or_404(Tree.objects.filter(user=user), pk=tree_id)
+    return _get_or_create_default_tree(user)
+
+
+def _get_tree_from_request(request):
+    tree_id = request.GET.get('tree') or request.GET.get('tree_id') or request.POST.get('tree_id')
+    if not tree_id and hasattr(request, 'data'):
+        tree_id = request.data.get('tree_id') or request.data.get('tree')
+    return _get_tree_by_id_or_default(request.user, tree_id)
+
+
+def _tree_query(request):
+    tree = _get_tree_from_request(request)
+    return tree, {'tree_id': tree.id}
 
 
 # ──────────────────────────────────────────────
@@ -621,13 +661,14 @@ def reject_friend_request(request, request_id):
 @permission_classes([IsAuthenticated])
 def tree_data(request):
     """Return all nodes + edges for the frontend to render."""
-    cache_key = f'tree-data:v1:user:{request.user.id}'
+    tree = _get_tree_from_request(request)
+    cache_key = f'tree-data:v2:user:{request.user.id}:tree:{tree.id}'
     cached = cache.get(cache_key)
     if cached:
         return Response(cached)
 
-    nodes = Node.objects.filter(user=request.user).annotate(children_count=Count('children'))
-    edges = Edge.objects.select_related('source', 'target').filter(user=request.user)
+    nodes = Node.objects.filter(user=request.user, tree=tree).annotate(children_count=Count('children'))
+    edges = Edge.objects.select_related('source', 'target').filter(user=request.user, tree=tree)
 
     node_data = NodeSerializer(nodes, many=True, context={'request': request}).data
 
@@ -647,7 +688,7 @@ def tree_data(request):
     for edge in edges:
         edge_data.append(EdgeSerializer(edge).data)
 
-    payload = {'nodes': node_data, 'edges': edge_data}
+    payload = {'tree': TreeSerializer(tree).data, 'nodes': node_data, 'edges': edge_data}
     cache.set(cache_key, payload, timeout=60)
     return Response(payload)
 
@@ -659,14 +700,17 @@ def tree_data(request):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def node_list(request):
+    tree = _get_tree_from_request(request)
     if request.method == 'GET':
-        nodes = Node.objects.filter(user=request.user).annotate(children_count=Count('children'))
+        nodes = Node.objects.filter(user=request.user, tree=tree).annotate(children_count=Count('children'))
         serializer = NodeSerializer(nodes, many=True, context={'request': request})
         return Response(serializer.data)
 
-    serializer = NodeSerializer(data=request.data, context={'request': request})
+    payload = dict(request.data)
+    payload.setdefault('tree', tree.id)
+    serializer = NodeSerializer(data=payload, context={'request': request})
     if serializer.is_valid():
-        node = serializer.save(user=request.user)
+        node = serializer.save(user=request.user, tree=tree)
         # Auto-fetch cover if not supplied
         if node.node_type != 'book':
             pass
@@ -676,7 +720,7 @@ def node_list(request):
         elif not node.cover_image and node.title:
             node.cover_image = _fetch_cover_google(node.title, node.author)
             node.save(update_fields=['cover_image'])
-        _invalidate_tree_cache(request.user.id)
+        _invalidate_tree_cache(request.user.id, tree.id)
         return Response(
             NodeSerializer(node, context={'request': request}).data,
             status=status.HTTP_201_CREATED,
@@ -701,24 +745,27 @@ def node_detail(request, pk):
                                     context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            _invalidate_tree_cache(request.user.id)
+            _invalidate_tree_cache(request.user.id, node.tree_id)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     node.delete()
-    _invalidate_tree_cache(request.user.id)
+    _invalidate_tree_cache(request.user.id, node.tree_id)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def edge_list(request):
+    tree = _get_tree_from_request(request)
     if request.method == 'GET':
-        edges = Edge.objects.filter(user=request.user)
+        edges = Edge.objects.filter(user=request.user, tree=tree)
         serializer = EdgeSerializer(edges, many=True)
         return Response(serializer.data)
 
-    serializer = EdgeSerializer(data=request.data)
+    payload = dict(request.data)
+    payload.setdefault('tree', tree.id)
+    serializer = EdgeSerializer(data=payload)
     if serializer.is_valid():
         source = serializer.validated_data['source']
         target = serializer.validated_data['target']
@@ -730,6 +777,12 @@ def edge_list(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if source.tree_id != tree.id or target.tree_id != tree.id:
+            return Response(
+                {'detail': 'Source and target must belong to the selected tree.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if source.id == target.id:
             return Response(
                 {'detail': 'Source and target must be different nodes.'},
@@ -738,6 +791,7 @@ def edge_list(request):
 
         if Edge.objects.filter(
             user=request.user,
+            tree=tree,
             source=source,
             target=target,
             edge_type=edge_type,
@@ -747,8 +801,8 @@ def edge_list(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        edge = serializer.save(user=request.user)
-        _invalidate_tree_cache(request.user.id)
+        edge = serializer.save(user=request.user, tree=tree)
+        _invalidate_tree_cache(request.user.id, tree.id)
         return Response(EdgeSerializer(edge).data, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -763,17 +817,37 @@ def edge_detail(request, pk):
         serializer = EdgeSerializer(edge, data=request.data, partial=True)
         if serializer.is_valid():
             saved = serializer.save()
-            _invalidate_tree_cache(request.user.id)
+            _invalidate_tree_cache(request.user.id, edge.tree_id)
             return Response(EdgeSerializer(saved).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     edge.delete()
-    _invalidate_tree_cache(request.user.id)
+    _invalidate_tree_cache(request.user.id, edge.tree_id)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-def _invalidate_tree_cache(user_id):
+def _invalidate_tree_cache(user_id, tree_id=None):
+    if tree_id:
+        cache.delete(f'tree-data:v2:user:{user_id}:tree:{tree_id}')
     cache.delete(f'tree-data:v1:user:{user_id}')
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def tree_list(request):
+    if request.method == 'GET':
+        trees = Tree.objects.filter(user=request.user).annotate(node_count=Count('nodes'))
+        return Response(TreeSerializer(trees, many=True).data)
+
+    name = (request.data.get('name') or '').strip()[:160]
+    if not name:
+        return Response({'detail': 'Tree name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    tree = Tree.objects.create(
+        user=request.user,
+        name=name,
+        description=(request.data.get('description') or '').strip()[:280],
+    )
+    return Response(TreeSerializer(tree).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
@@ -782,6 +856,7 @@ def tree_auto_from_shelf(request):
     shelf = (request.data.get('shelf') or '').strip()
     shelf_type = (request.data.get('shelf_type') or 'custom').strip().lower()
     mode = (request.data.get('mode') or 'author').strip().lower()
+    destination = (request.data.get('destination') or 'new').strip().lower()
 
     if not shelf:
         return Response({'detail': 'Choose a shelf first.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -803,11 +878,22 @@ def tree_auto_from_shelf(request):
     if strategy is None:
         return Response({'detail': 'This tree grouping mode is not available yet.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    with transaction.atomic():
-        _create_tree_version(request.user, f'Before auto tree from {shelf}', 'auto_tree')
-        result = strategy.generate(request.user, books)
+    if destination == 'existing':
+        tree = _get_tree_by_id_or_default(request.user, request.data.get('tree_id') or request.data.get('tree'))
+    else:
+        tree_name = (request.data.get('tree_name') or f'{shelf} authors').strip()[:160]
+        tree = Tree.objects.create(
+            user=request.user,
+            name=tree_name or 'Auto Tree',
+            description=f'Auto-created from shelf: {shelf}'[:280],
+        )
 
-    _invalidate_tree_cache(request.user.id)
+    with transaction.atomic():
+        _create_tree_version(request.user, tree, f'Before auto tree from {shelf}', 'auto_tree')
+        result = strategy.generate(request.user, books, tree)
+
+    result['tree'] = TreeSerializer(tree).data
+    _invalidate_tree_cache(request.user.id, tree.id)
     return Response(result, status=status.HTTP_201_CREATED)
 
 
@@ -821,39 +907,43 @@ def my_books_recommendations(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def tree_version_list(request):
-    versions = TreeVersion.objects.filter(user=request.user)[:20]
+    tree = _get_tree_from_request(request)
+    versions = TreeVersion.objects.filter(user=request.user, tree=tree)[:20]
     return Response(TreeVersionSerializer(versions, many=True).data)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def tree_version_create(request):
+    tree = _get_tree_from_request(request)
     label = (request.data.get('label') or '').strip()[:180]
     if not label:
         label = 'Saved tree version'
-    version = _create_tree_version(request.user, label, 'manual_save')
+    version = _create_tree_version(request.user, tree, label, 'manual_save')
     return Response(TreeVersionSerializer(version).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def tree_version_restore(request, version_id):
-    version = get_object_or_404(TreeVersion, pk=version_id, user=request.user)
-    _create_tree_version(request.user, 'Before restoring tree version', 'restore')
-    _restore_tree_snapshot(request.user, version.snapshot or {})
-    _invalidate_tree_cache(request.user.id)
+    tree = _get_tree_from_request(request)
+    version = get_object_or_404(TreeVersion, pk=version_id, user=request.user, tree=tree)
+    _create_tree_version(request.user, tree, 'Before restoring tree version', 'restore')
+    _restore_tree_snapshot(request.user, tree, version.snapshot or {})
+    _invalidate_tree_cache(request.user.id, tree.id)
     return Response({'detail': 'Tree version restored.'})
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def tree_snapshot_restore(request):
+    tree = _get_tree_from_request(request)
     snapshot = request.data.get('snapshot') or {}
     if not isinstance(snapshot, dict):
         return Response({'detail': 'Snapshot must be an object.'}, status=status.HTTP_400_BAD_REQUEST)
     with transaction.atomic():
-        _restore_tree_snapshot(request.user, snapshot)
-    _invalidate_tree_cache(request.user.id)
+        _restore_tree_snapshot(request.user, tree, snapshot)
+    _invalidate_tree_cache(request.user.id, tree.id)
     return Response({'detail': 'Tree changes discarded.'})
 
 
@@ -944,16 +1034,17 @@ def imported_book_detail(request, pk):
 @permission_classes([IsAuthenticated])
 def imported_book_add_to_tree(request, pk):
     imported_book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=pk)
+    tree = _get_tree_from_request(request)
     parent_id = request.data.get('parent') or None
     parent = None
     if parent_id:
-        parent = get_object_or_404(Node.objects.filter(user=request.user), pk=parent_id)
+        parent = get_object_or_404(Node.objects.filter(user=request.user, tree=tree), pk=parent_id)
 
     existing_node = _find_existing_tree_book(request.user, {
         'title': imported_book.title,
         'author': imported_book.author,
         'isbn': imported_book.isbn,
-    })
+    }, tree=tree)
     if existing_node:
         serializer = NodeSerializer(
             existing_node,
@@ -963,12 +1054,13 @@ def imported_book_add_to_tree(request, pk):
         )
         if serializer.is_valid():
             saved = serializer.save()
-            _invalidate_tree_cache(request.user.id)
+            _invalidate_tree_cache(request.user.id, tree.id)
             return Response(NodeSerializer(saved, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     node = Node.objects.create(
         user=request.user,
+        tree=tree,
         node_type='book',
         title=imported_book.title,
         author=imported_book.author,
@@ -982,7 +1074,7 @@ def imported_book_add_to_tree(request, pk):
         date_read=imported_book.date_read,
         notes=imported_book.notes,
     )
-    _invalidate_tree_cache(request.user.id)
+    _invalidate_tree_cache(request.user.id, tree.id)
     return Response(NodeSerializer(node, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
@@ -1034,13 +1126,14 @@ def _auto_tree_strategy(mode):
 class AuthorAutoTreeStrategy:
     mode = 'author'
 
-    def generate(self, user, books):
+    def generate(self, user, books, tree):
         created_author_count = 0
         reused_author_count = 0
         created_book_count = 0
         reused_book_count = 0
         connected_count = 0
         skipped = []
+        author_payloads = self._author_payloads(books)
 
         for index, source_book in enumerate(books):
             source_payload = _library_book_to_payload(source_book)
@@ -1055,8 +1148,8 @@ class AuthorAutoTreeStrategy:
 
             author_nodes = []
             for author_name in authors:
-                author_payload = _enrich_author_for_auto_tree(author_name, allow_network=False)
-                author_node, created = _get_or_create_author_node(user, author_payload, index)
+                author_payload = author_payloads.get(_normalize_text(author_name)) or _enrich_author_for_auto_tree(author_name, allow_network=False)
+                author_node, created = _get_or_create_author_node(user, tree, author_payload, index)
                 author_nodes.append(author_node)
                 if created:
                     created_author_count += 1
@@ -1066,6 +1159,7 @@ class AuthorAutoTreeStrategy:
             primary_author = author_nodes[0]
             book_node, created = _get_or_create_tree_book_from_library(
                 user,
+                tree,
                 enriched_book,
                 source_book,
                 primary_author,
@@ -1079,6 +1173,7 @@ class AuthorAutoTreeStrategy:
             for author_node in author_nodes[1:]:
                 _, edge_created = Edge.objects.get_or_create(
                     user=user,
+                    tree=tree,
                     source=author_node,
                     target=book_node,
                     edge_type='author',
@@ -1104,6 +1199,17 @@ class AuthorAutoTreeStrategy:
             'created_edges': connected_count,
             'skipped': skipped,
         }
+
+    def _author_payloads(self, books):
+        payloads = {}
+        for source_book in books:
+            source_payload = _library_book_to_payload(source_book)
+            for author_name in _split_author_names(source_payload.get('author')):
+                key = _normalize_text(author_name)
+                if key in payloads:
+                    continue
+                payloads[key] = _enrich_author_for_auto_tree(author_name, allow_network=True)
+        return payloads
 
 
 def _get_library_books(user):
@@ -1247,10 +1353,12 @@ def _enrich_author_for_auto_tree(author_name, allow_network=False):
     cache_key = _cache_key('auto-tree:author:v1', author_name.lower())
     cached = cache.get(cache_key)
     if cached is None:
+        cached = cache.get(_cache_key('author-search:v1', author_name.lower()))
+    if cached is None:
         if not allow_network:
             return payload
         cached = _safe_external_lookup(
-            lambda: _search_authors_open_library(author_name)[:3],
+            lambda: _search_authors_open_library(author_name, timeout=1.2)[:3],
             'Auto tree author lookup failed for query=%r',
             author_name,
         )
@@ -1277,14 +1385,14 @@ def _safe_external_lookup(fetcher, log_message, log_arg):
         logger.warning(log_message, log_arg, exc_info=True)
         return []
     except BaseException as exc:
-        logger.warning('%s aborted with %s', log_message, type(exc).__name__, exc_info=True)
+        logger.warning('External lookup aborted with %s', type(exc).__name__, exc_info=True)
         return []
 
 
-def _get_or_create_author_node(user, author_payload, index=0):
+def _get_or_create_author_node(user, tree, author_payload, index=0):
     title = (author_payload.get('title') or '').strip()[:255]
     title_norm = _normalize_text(title)
-    for node in Node.objects.filter(user=user, node_type='author'):
+    for node in Node.objects.filter(user=user, tree=tree, node_type='author'):
         if _normalize_text(node.title) == title_norm:
             changed = []
             if author_payload.get('cover_url') and not node.cover_image:
@@ -1302,14 +1410,15 @@ def _get_or_create_author_node(user, author_payload, index=0):
 
     node = Node.objects.create(
         user=user,
+        tree=tree,
         title=title or 'Unknown author',
         node_type='author',
         author='Author',
         year=author_payload.get('year'),
         description=(author_payload.get('description') or '')[:1000],
         cover_image=author_payload.get('cover_url') or '',
-        pos_x=index * 280,
-        pos_y=0,
+        pos_x=None,
+        pos_y=None,
         style={
             'color': '#263f32',
             'glow': '#8ed18b',
@@ -1319,8 +1428,8 @@ def _get_or_create_author_node(user, author_payload, index=0):
     return node, True
 
 
-def _get_or_create_tree_book_from_library(user, book_payload, source_book, parent, index=0):
-    existing = _find_existing_tree_book(user, book_payload)
+def _get_or_create_tree_book_from_library(user, tree, book_payload, source_book, parent, index=0):
+    existing = _find_existing_tree_book(user, book_payload, tree=tree)
     if existing:
         changed = []
         if existing.parent_id != parent.id:
@@ -1347,6 +1456,7 @@ def _get_or_create_tree_book_from_library(user, book_payload, source_book, paren
 
     node = Node.objects.create(
         user=user,
+        tree=tree,
         node_type='book',
         title=(book_payload.get('title') or 'Untitled')[:255],
         author=(book_payload.get('author') or '')[:255],
@@ -1511,19 +1621,20 @@ def _matching_counter_key(counter, value):
     return ''
 
 
-def _create_tree_version(user, label, reason='manual'):
-    snapshot = _build_tree_snapshot(user)
+def _create_tree_version(user, tree, label, reason='manual'):
+    snapshot = _build_tree_snapshot(user, tree)
     return TreeVersion.objects.create(
         user=user,
+        tree=tree,
         label=label,
         reason=reason,
         snapshot=snapshot,
     )
 
 
-def _build_tree_snapshot(user):
-    nodes = Node.objects.filter(user=user).order_by('date_added')
-    edges = Edge.objects.filter(user=user).order_by('id')
+def _build_tree_snapshot(user, tree):
+    nodes = Node.objects.filter(user=user, tree=tree).order_by('date_added')
+    edges = Edge.objects.filter(user=user, tree=tree).order_by('id')
     return {
         'nodes': [
             {
@@ -1564,14 +1675,14 @@ def _build_tree_snapshot(user):
     }
 
 
-def _restore_tree_snapshot(user, snapshot):
+def _restore_tree_snapshot(user, tree, snapshot):
     from datetime import date
 
     node_rows = snapshot.get('nodes') or []
     edge_rows = snapshot.get('edges') or []
 
-    Edge.objects.filter(user=user).delete()
-    Node.objects.filter(user=user).delete()
+    Edge.objects.filter(user=user, tree=tree).delete()
+    Node.objects.filter(user=user, tree=tree).delete()
 
     created_nodes = {}
     for row in node_rows:
@@ -1579,6 +1690,7 @@ def _restore_tree_snapshot(user, snapshot):
         node = Node.objects.create(
             id=node_id,
             user=user,
+            tree=tree,
             title=row.get('title') or 'Untitled',
             node_type=row.get('node_type') or 'book',
             author=row.get('author') or '',
@@ -1622,6 +1734,7 @@ def _restore_tree_snapshot(user, snapshot):
         Edge.objects.create(
             id=edge_uuid,
             user=user,
+            tree=tree,
             source=source,
             target=target,
             edge_type=row.get('edge_type') or 'custom',
@@ -1777,11 +1890,14 @@ def _find_existing_book(user, book):
     return _find_existing_tree_book(user, book)
 
 
-def _find_existing_tree_book(user, book):
+def _find_existing_tree_book(user, book, tree=None):
 
     isbn = _normalize_goodreads_isbn(book.get('isbn'))
     if isbn:
-        existing = Node.objects.filter(user=user, node_type='book', isbn=isbn).first()
+        queryset = Node.objects.filter(user=user, node_type='book', isbn=isbn)
+        if tree is not None:
+            queryset = queryset.filter(tree=tree)
+        existing = queryset.first()
         if existing:
             return existing
 
@@ -1791,6 +1907,8 @@ def _find_existing_tree_book(user, book):
         return None
 
     candidates = Node.objects.filter(user=user, node_type='book', title__iexact=str(book.get('title') or '').strip())
+    if tree is not None:
+        candidates = candidates.filter(tree=tree)
     for candidate in candidates:
         if _normalize_text(candidate.title) == title and _normalize_text(candidate.author) == author:
             return candidate
@@ -2293,12 +2411,12 @@ def _search_books_open_library(query, max_results=8):
     return results
 
 
-def _search_authors_open_library(query, max_results=8):
+def _search_authors_open_library(query, max_results=8, timeout=3.5):
     resp = requests.get(
         'https://openlibrary.org/search/authors.json',
         params={'q': query, 'limit': max_results},
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-        timeout=3.5,
+        timeout=timeout,
     )
     resp.raise_for_status()
     docs = resp.json().get('docs') or []

@@ -87,6 +87,13 @@
         <select id="autoTreeMode" aria-label="Auto tree grouping mode">
           <option value="author">Authors</option>
         </select>
+        <select id="autoTreeDestination" aria-label="Auto tree destination">
+          <option value="new">New tree</option>
+          {% for tree in trees %}
+            <option value="existing:{{ tree.id }}">{{ tree.name }}</option>
+          {% endfor %}
+        </select>
+        <input id="autoTreeName" type="text" placeholder="Tree name">
         <button class="btn btn--primary" type="button" id="createAutoTree">Create Tree</button>
       </div>
       <div class="auto-tree-card__status" id="autoTreeStatus" aria-live="polite"></div>
