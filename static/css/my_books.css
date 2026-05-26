@@ -61,6 +61,8 @@ body {
   align-self: start;
   position: sticky;
   top: 88px;
+  max-height: calc(100vh - 108px);
+  overflow-y: auto;
   padding: 22px;
 }
 
@@ -142,8 +144,7 @@ body {
   font: inherit;
 }
 
-.auto-tree-card,
-.recommendations-card {
+.auto-tree-card {
   border: 1px solid rgba(190, 160, 120, 0.32);
   background:
     linear-gradient(135deg, rgba(45, 37, 24, 0.74), rgba(12, 19, 13, 0.86));
@@ -436,16 +437,36 @@ body {
 
 .recommendations-card__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
 
+.recommendations-card {
+  border-top: 1px solid rgba(130, 156, 118, 0.22);
+  margin-top: 24px;
+  padding-top: 18px;
+}
+
+.recommendations-card .section-kicker {
+  margin-bottom: 5px;
+}
+
+.recommendations-card h2 {
+  font-size: 1.12rem;
+}
+
+.recommendations-card .btn {
+  padding-inline: 10px;
+}
+
 .recommendation-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
+  gap: 10px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .recommendation-message {
@@ -454,17 +475,17 @@ body {
 
 .recommendation-book {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
   border: 1px solid rgba(190, 160, 120, 0.22);
   background: rgba(7, 12, 8, 0.46);
   border-radius: 8px;
-  padding: 11px;
+  padding: 9px;
 }
 
 .recommendation-book__cover {
-  width: 58px;
+  width: 44px;
   aspect-ratio: 2 / 3;
   border-radius: 6px;
   overflow: hidden;
@@ -485,7 +506,7 @@ body {
 
 .recommendation-book h3 {
   font-family: var(--font-serif);
-  font-size: 1rem;
+  font-size: 0.94rem;
   line-height: 1.22;
 }
 
@@ -505,6 +526,7 @@ body {
 .recommendation-book .btn {
   grid-column: 1 / -1;
   justify-content: center;
+  width: 100%;
 }
 
 .book-grid {
@@ -678,12 +700,18 @@ body {
 
   .shelves-panel {
     position: static;
+    max-height: none;
+    overflow: visible;
     padding: 18px;
   }
 
   .shelf-list,
   .custom-shelves {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recommendation-grid {
+    max-height: 280px;
   }
 
   .custom-shelves h2,
@@ -758,7 +786,6 @@ body {
 
   .shelf-list,
   .custom-shelves,
-  .recommendation-grid,
   .book-grid {
     grid-template-columns: 1fr;
   }

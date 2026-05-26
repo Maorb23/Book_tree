@@ -44,6 +44,19 @@
         <p>No custom shelves yet.</p>
       {% endfor %}
     </div>
+
+    <section class="recommendations-card">
+      <div class="recommendations-card__head">
+        <div>
+          <p class="section-kicker">For your next branch</p>
+          <h2>Books you may like</h2>
+        </div>
+        <button class="btn btn--ghost btn--sm" type="button" id="refreshRecommendations">Refresh</button>
+      </div>
+      <div class="recommendation-grid" id="recommendationGrid" aria-live="polite">
+        <p class="recommendation-message">Finding matches from your shelves...</p>
+      </div>
+    </section>
   </aside>
 
   <section class="library-panel">
@@ -137,19 +150,6 @@
             <tbody id="importPreviewRows"></tbody>
           </table>
         </div>
-      </div>
-    </section>
-
-    <section class="recommendations-card">
-      <div class="recommendations-card__head">
-        <div>
-          <p class="section-kicker">For your next branch</p>
-          <h2>Books you may like</h2>
-        </div>
-        <button class="btn btn--ghost btn--sm" type="button" id="refreshRecommendations">Refresh</button>
-      </div>
-      <div class="recommendation-grid" id="recommendationGrid" aria-live="polite">
-        <p class="recommendation-message">Finding matches from your shelves...</p>
       </div>
     </section>
 

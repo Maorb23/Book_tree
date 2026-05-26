@@ -201,7 +201,7 @@
 
     createAutoTree.disabled = true;
     createAutoTree.textContent = 'Creating...';
-    renderAutoTreeStatus('Searching book and author metadata, then shaping your tree...');
+    renderAutoTreeStatus('Shaping your shelf into author branches...');
     try {
       const res = await fetch('/api/tree/auto-from-shelf/', {
         method: 'POST',

@@ -479,7 +479,8 @@ class GoodreadsImportTests(TestCase):
         author = Node.objects.get(user=self.user, node_type='author', title='Thomas Pynchon')
         book = Node.objects.get(user=self.user, node_type='book', title='The Crying of Lot 49')
         self.assertEqual(book.parent, author)
-        self.assertEqual(author.year, 1937)
+        self.assertIsNone(author.year)
+        self.assertFalse(mock_author_search.called)
         self.assertEqual(TreeVersion.objects.filter(user=self.user, reason='auto_tree').count(), 1)
 
     @patch('tree.views._search_authors_open_library', return_value=[])
@@ -514,6 +515,34 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(Node.objects.filter(user=self.user, node_type='author', title='Don DeLillo').count(), 1)
         self.assertEqual(Node.objects.filter(user=self.user, node_type='book', title='White Noise').count(), 1)
         self.assertEqual(second.json()['reused_books'], 1)
+
+    @patch('tree.views._search_authors_open_library', side_effect=SystemExit(1))
+    @patch('tree.views._search_books_combined', side_effect=SystemExit(1))
+    def test_auto_tree_from_shelf_does_not_depend_on_live_external_lookup(self, mock_book_search, mock_author_search):
+        ImportedBook.objects.create(
+            user=self.user,
+            title='White Noise',
+            author='Don DeLillo',
+            custom_shelf='postmodern',
+            isbn='9780143105985',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(mock_author_search.called)
+        self.assertFalse(mock_book_search.called)
+        author = Node.objects.get(user=self.user, node_type='author', title='Don DeLillo')
+        book = Node.objects.get(user=self.user, node_type='book', title='White Noise')
+        self.assertEqual(book.parent, author)
 
     @patch('tree.views._search_books_combined', return_value=[])
     def test_recommendations_exclude_books_already_in_my_books(self, mock_book_search):

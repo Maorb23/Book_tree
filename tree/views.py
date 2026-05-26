@@ -1044,7 +1044,7 @@ class AuthorAutoTreeStrategy:
 
         for index, source_book in enumerate(books):
             source_payload = _library_book_to_payload(source_book)
-            enriched_book = _enrich_book_for_auto_tree(source_payload)
+            enriched_book = _enrich_book_for_auto_tree(source_payload, allow_network=False)
             authors = _split_author_names(enriched_book.get('author') or source_payload.get('author'))
             if not authors:
                 skipped.append({
@@ -1055,7 +1055,7 @@ class AuthorAutoTreeStrategy:
 
             author_nodes = []
             for author_name in authors:
-                author_payload = _enrich_author_for_auto_tree(author_name)
+                author_payload = _enrich_author_for_auto_tree(author_name, allow_network=False)
                 author_node, created = _get_or_create_author_node(user, author_payload, index)
                 author_nodes.append(author_node)
                 if created:
@@ -1180,7 +1180,7 @@ def _split_author_names(author_value):
     return unique
 
 
-def _enrich_book_for_auto_tree(book):
+def _enrich_book_for_auto_tree(book, allow_network=False):
     title = book.get('title') or ''
     author = book.get('author') or ''
     query = f'{title} {author}'.strip()
@@ -1190,11 +1190,13 @@ def _enrich_book_for_auto_tree(book):
     cache_key = _cache_key('auto-tree:book:v1', query.lower())
     cached = cache.get(cache_key)
     if cached is None:
-        try:
-            cached = _search_books_combined(query)[:4]
-        except Exception:
-            logger.exception('Auto tree book lookup failed for query=%r', query)
-            cached = []
+        if not allow_network:
+            return book
+        cached = _safe_external_lookup(
+            lambda: _search_books_combined(query)[:4],
+            'Auto tree book lookup failed for query=%r',
+            query,
+        )
         cache.set(cache_key, cached, timeout=60 * 60 * 24)
 
     best = _best_catalog_match(book, cached)
@@ -1233,7 +1235,7 @@ def _best_catalog_match(book, candidates):
     return ranked[0][1] if ranked and ranked[0][0] > 0 else candidates[0]
 
 
-def _enrich_author_for_auto_tree(author_name):
+def _enrich_author_for_auto_tree(author_name, allow_network=False):
     payload = {
         'title': author_name,
         'author': 'Author',
@@ -1245,11 +1247,13 @@ def _enrich_author_for_auto_tree(author_name):
     cache_key = _cache_key('auto-tree:author:v1', author_name.lower())
     cached = cache.get(cache_key)
     if cached is None:
-        try:
-            cached = _search_authors_open_library(author_name)[:3]
-        except Exception:
-            logger.exception('Auto tree author lookup failed for query=%r', author_name)
-            cached = []
+        if not allow_network:
+            return payload
+        cached = _safe_external_lookup(
+            lambda: _search_authors_open_library(author_name)[:3],
+            'Auto tree author lookup failed for query=%r',
+            author_name,
+        )
         cache.set(cache_key, cached, timeout=60 * 60 * 24)
 
     if cached:
@@ -1264,6 +1268,17 @@ def _enrich_author_for_auto_tree(author_name):
             'description': exact.get('description') or '',
         })
     return payload
+
+
+def _safe_external_lookup(fetcher, log_message, log_arg):
+    try:
+        return fetcher()
+    except (RequestException, TimeoutError, OSError, ValueError):
+        logger.warning(log_message, log_arg, exc_info=True)
+        return []
+    except BaseException as exc:
+        logger.warning('%s aborted with %s', log_message, type(exc).__name__, exc_info=True)
+        return []
 
 
 def _get_or_create_author_node(user, author_payload, index=0):
@@ -1451,26 +1466,6 @@ def _recommendation_candidates(profile):
     candidates = []
     for book in _curated_landing_books():
         candidates.append(book)
-
-    queries = []
-    for author, _ in profile['authors'].most_common(3):
-        queries.append(author)
-    for genre, _ in profile['genres'].most_common(3):
-        queries.append(genre)
-    for keyword, _ in profile['keywords'].most_common(2):
-        queries.append(keyword)
-
-    for query in queries[:6]:
-        cache_key = _cache_key('recommendation-search:v1', query.lower())
-        rows = cache.get(cache_key)
-        if rows is None:
-            try:
-                rows = _search_books_combined(query)[:6]
-            except Exception:
-                logger.exception('Recommendation lookup failed for query=%r', query)
-                rows = []
-            cache.set(cache_key, rows, timeout=60 * 60 * 24)
-        candidates.extend(rows)
     return candidates
 
 
