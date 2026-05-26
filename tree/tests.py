@@ -15,7 +15,7 @@ from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
-from .views import _apply_known_book_metadata, _book_rank, _search_authors_open_library
+from .views import _apply_known_book_metadata, _book_rank, _get_library_books, _search_authors_open_library
 from book_tree.settings import _email_env
 
 
@@ -514,6 +514,62 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(Node.objects.filter(user=self.user, tree=main_tree).count(), 1)
         self.assertTrue(Node.objects.filter(user=self.user, tree=new_tree, title='Don DeLillo').exists())
         self.assertTrue(Node.objects.filter(user=self.user, tree=new_tree, title='White Noise').exists())
+
+    @patch('tree.views._search_authors_open_library', return_value=[])
+    @patch('tree.views._search_books_combined', return_value=[])
+    def test_auto_tree_created_books_do_not_duplicate_my_books_library(self, mock_book_search, mock_author_search):
+        ImportedBook.objects.create(
+            user=self.user,
+            title='White Noise',
+            author='Don DeLillo',
+            custom_shelf='postmodern',
+            isbn='9780143105985',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+                'destination': 'new',
+                'tree_name': 'Postmodern Authors',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        source = ImportedBook.objects.get(user=self.user, title='White Noise')
+        self.assertEqual(source.custom_shelf, 'postmodern')
+        generated = Node.objects.get(user=self.user, node_type='book', title='White Noise')
+        self.assertTrue(generated.style.get('library_shadow'))
+        library_books = _get_library_books(self.user)
+        self.assertEqual(len(library_books), 1)
+        self.assertEqual(library_books[0].library_source, 'imported')
+
+    def test_my_books_library_dedupes_imported_and_tree_books_for_user(self):
+        Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        ImportedBook.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            shelf=Node.SHELF_READ,
+        )
+        Node.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            node_type='book',
+            shelf=Node.SHELF_WANT_TO_READ,
+        )
+
+        library_books = _get_library_books(self.user)
+
+        self.assertEqual(len(library_books), 1)
+        self.assertEqual(library_books[0].library_source, 'imported')
+        self.assertEqual(library_books[0].shelf, Node.SHELF_READ)
 
     @patch('tree.views._search_authors_open_library', return_value=[])
     @patch('tree.views._search_books_combined', return_value=[])

@@ -4,7 +4,6 @@ import csv
 import hashlib
 import io
 import uuid
-from itertools import chain
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -86,12 +85,10 @@ def tree_page(request):
 @login_required
 def my_books(request):
     current_tree = _get_tree_from_request(request)
-    tree_books = Node.objects.filter(user=request.user, node_type='book').order_by('title')
     tree_parent_options = Node.objects.filter(user=request.user, tree=current_tree).order_by('node_type', 'title')
-    imported_books = ImportedBook.objects.filter(user=request.user).order_by('title')
     trees = Tree.objects.filter(user=request.user).annotate(node_count=Count('nodes'))
     books = sorted(
-        chain(tree_books, imported_books),
+        _get_library_books(request.user),
         key=lambda book: (book.title or '').lower(),
     )
     shelf_counter = Counter(book.shelf for book in books)
@@ -126,13 +123,14 @@ def challenges(request):
 
 def _challenge_context(user):
     challenge, _ = ReadingChallenge.objects.get_or_create(user=user, year=2026)
+    node_read_books = Node.objects.filter(
+        user=user,
+        node_type='book',
+        shelf=Node.SHELF_READ,
+        date_read__year=challenge.year,
+    )
     books_read = (
-        Node.objects.filter(
-            user=user,
-            node_type='book',
-            shelf=Node.SHELF_READ,
-            date_read__year=challenge.year,
-        ).count()
+        len([book for book in node_read_books if not _is_library_shadow(book)])
         + ImportedBook.objects.filter(
             user=user,
             shelf=Node.SHELF_READ,
@@ -146,11 +144,14 @@ def _challenge_context(user):
     current_streak = _current_page_streak(page_days)
     best_streak = _best_page_streak(page_days)
     recent_logs = DailyPageLog.objects.filter(user=user).order_by('-log_date', '-created_at')[:8]
-    currently_reading = list(Node.objects.filter(
-        user=user,
-        node_type='book',
-        shelf=Node.SHELF_CURRENTLY_READING,
-    ).order_by('title')[:8])
+    currently_reading = [
+        book for book in Node.objects.filter(
+            user=user,
+            node_type='book',
+            shelf=Node.SHELF_CURRENTLY_READING,
+        ).order_by('title')
+        if not _is_library_shadow(book)
+    ][:8]
     currently_reading += list(ImportedBook.objects.filter(
         user=user,
         shelf=Node.SHELF_CURRENTLY_READING,
@@ -1213,9 +1214,19 @@ class AuthorAutoTreeStrategy:
 
 
 def _get_library_books(user):
-    tree_books = list(Node.objects.filter(user=user, node_type='book').order_by('date_added'))
     imported_books = list(ImportedBook.objects.filter(user=user).order_by('date_added'))
-    return tree_books + imported_books
+    tree_books = list(
+        Node.objects
+        .filter(user=user, node_type='book')
+        .order_by('date_added')
+    )
+    tree_books = [book for book in tree_books if not _is_library_shadow(book)]
+    return _dedupe_library_books(imported_books + tree_books)
+
+
+def _is_library_shadow(book):
+    style = getattr(book, 'style', None) or {}
+    return bool(style.get('library_shadow'))
 
 
 def _get_library_books_for_shelf(user, shelf, shelf_type):
@@ -1237,13 +1248,19 @@ def _dedupe_library_books(books):
     deduped = []
     seen = set()
     for book in books:
-        isbn = _normalize_goodreads_isbn(getattr(book, 'isbn', ''))
-        key = f'isbn:{isbn}' if isbn else _book_key(getattr(book, 'title', ''), getattr(book, 'author', ''))
+        key = _library_book_identity(book)
         if key in seen:
             continue
         seen.add(key)
         deduped.append(book)
     return deduped
+
+
+def _library_book_identity(book):
+    isbn = _normalize_goodreads_isbn(getattr(book, 'isbn', ''))
+    if isbn:
+        return f'isbn:{isbn}'
+    return _book_key(getattr(book, 'title', ''), getattr(book, 'author', ''))
 
 
 def _library_book_to_payload(book):
@@ -1472,6 +1489,10 @@ def _get_or_create_tree_book_from_library(user, tree, book_payload, source_book,
         custom_shelf=getattr(source_book, 'custom_shelf', book_payload.get('custom_shelf') or ''),
         date_read=getattr(source_book, 'date_read', book_payload.get('date_read')),
         notes=getattr(source_book, 'notes', book_payload.get('notes') or ''),
+        style={
+            'generated_by': 'auto_tree',
+            'library_shadow': True,
+        },
     )
     return node, True
 
@@ -1529,11 +1550,9 @@ def _get_user_book_recommendations(user, limit=8):
 
 
 def _library_state_token(user):
-    tree_count = Node.objects.filter(user=user, node_type='book').count()
-    imported_count = ImportedBook.objects.filter(user=user).count()
-    tree_latest = Node.objects.filter(user=user, node_type='book').order_by('-date_added').values_list('date_added', flat=True).first()
-    imported_latest = ImportedBook.objects.filter(user=user).order_by('-date_added').values_list('date_added', flat=True).first()
-    return f'{tree_count}:{imported_count}:{tree_latest or ""}:{imported_latest or ""}'
+    identities = sorted(_library_book_identity(book) for book in _get_library_books(user))
+    digest = hashlib.sha256('|'.join(identities).encode('utf-8')).hexdigest()[:16]
+    return f'{len(identities)}:{digest}'
 
 
 def _recommendation_profile(books):
