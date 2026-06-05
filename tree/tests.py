@@ -393,6 +393,47 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Node.objects.filter(user=self.user, title='Dune Messiah').exists())
 
+    def test_save_tree_version_can_store_comment(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        Node.objects.create(user=self.user, tree=tree, title='Dune', author='Frank Herbert', node_type='book')
+
+        response = self.client.post(
+            reverse('tree:api-tree-version-create'),
+            data=json.dumps({
+                'tree_id': tree.id,
+                'label': 'After adding Dune',
+                'comment': 'Added the first science fiction branch.',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        version = TreeVersion.objects.get(user=self.user, tree=tree)
+        self.assertEqual(version.comment, 'Added the first science fiction branch.')
+        self.assertEqual(response.json()['comment'], 'Added the first science fiction branch.')
+
+    def test_delete_tree_can_delete_default_and_promote_next_tree(self):
+        main_tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        next_tree = Tree.objects.create(user=self.user, name='Postmodern')
+        Node.objects.create(user=self.user, tree=main_tree, title='Dune', node_type='book')
+
+        response = self.client.delete(reverse('tree:api-tree-detail', args=[main_tree.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['next_tree_id'], next_tree.id)
+        self.assertFalse(Tree.objects.filter(id=main_tree.id).exists())
+        next_tree.refresh_from_db()
+        self.assertTrue(next_tree.is_default)
+
+    def test_delete_tree_allows_last_remaining_tree(self):
+        tree = Tree.objects.create(user=self.user, name='Only Tree', is_default=True)
+
+        response = self.client.delete(reverse('tree:api-tree-detail', args=[tree.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()['next_tree_id'])
+        self.assertFalse(Tree.objects.filter(user=self.user).exists())
+
     def test_discard_tree_restores_submitted_snapshot_without_version(self):
         node = Node.objects.create(
             user=self.user,

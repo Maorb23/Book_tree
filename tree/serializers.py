@@ -109,7 +109,7 @@ class TreeVersionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TreeVersion
-        fields = ['id', 'label', 'reason', 'created_at', 'node_count', 'edge_count']
+        fields = ['id', 'label', 'comment', 'reason', 'created_at', 'node_count', 'edge_count']
 
     def get_node_count(self, obj):
         return len((obj.snapshot or {}).get('nodes') or [])

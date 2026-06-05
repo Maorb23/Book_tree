@@ -29,6 +29,7 @@ urlpatterns = [
     # API
     path('api/tree/', views.tree_data, name='api-tree'),
     path('api/trees/', views.tree_list, name='api-tree-list'),
+    path('api/trees/<int:tree_id>/', views.tree_detail, name='api-tree-detail'),
     path('api/tree/versions/', views.tree_version_list, name='api-tree-versions'),
     path('api/tree/versions/save/', views.tree_version_create, name='api-tree-version-create'),
     path('api/tree/versions/<int:version_id>/restore/', views.tree_version_restore, name='api-tree-version-restore'),

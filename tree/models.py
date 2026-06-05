@@ -161,6 +161,7 @@ class TreeVersion(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tree_versions')
     tree = models.ForeignKey(Tree, null=True, blank=True, on_delete=models.CASCADE, related_name='versions')
     label = models.CharField(max_length=180)
+    comment = models.TextField(blank=True)
     reason = models.CharField(max_length=80, blank=True)
     snapshot = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)

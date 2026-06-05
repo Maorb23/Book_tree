@@ -109,6 +109,7 @@
       color: var(--text-light); font: inherit; font-size: 0.84rem;
     }
     .tree-switcher option { background: #1b201a; }
+    .tree-delete-btn { padding-inline: 12px; }
 
     .canvas-wrap {
       position: fixed; inset: 0; top: 68px; overflow: hidden; background: var(--bg-deep);
@@ -388,6 +389,11 @@
     }
     .version-card strong { color: var(--text-light); }
     .version-card span { color: var(--text-muted); font-size: 0.82rem; }
+    .version-card p {
+      color: #d9d0c2; font-size: 0.86rem; line-height: 1.45; margin: 0;
+      padding: 8px 10px; border-radius: 8px; background: rgba(9, 12, 9, 0.42);
+      border: 1px solid rgba(190, 160, 120, 0.16);
+    }
 
     #toastHost {
       position: fixed; right: 16px; top: 16px; z-index: 1400;
@@ -422,6 +428,12 @@
     .app-confirm__title { margin: 0; font-size: 1rem; font-family: var(--font-serif); }
     .app-confirm__x { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 1.1rem; }
     .app-confirm__body { padding: 14px; color: var(--text-muted); }
+    .app-confirm__body textarea {
+      width: 100%; min-height: 96px; resize: vertical; margin-top: 12px;
+      border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+      background: rgba(10, 14, 10, 0.86); color: var(--text-light); font: inherit;
+    }
+    .app-confirm__hint { display: block; margin-top: 10px; color: var(--text-muted); font-size: 0.78rem; }
     .app-confirm__footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); }
     body.confirm-open { overflow: hidden; }
 
@@ -493,6 +505,7 @@
           <option value="{{ tree.id }}" {% if tree.id == current_tree.id %}selected{% endif %}>{{ tree.name }}</option>
         {% endfor %}
       </select>
+      <button class="btn btn--danger tree-delete-btn" id="deleteTreeBtn" type="button">Delete Tree</button>
       <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
       <a href="{% url 'tree:challenges' %}" class="btn btn--ghost">Challenges</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
@@ -836,10 +849,17 @@
       return `${url.pathname}${url.search}`;
     }
 
-    document.getElementById('treeSwitcher')?.addEventListener('change', (event) => {
+    const treeSwitcher = document.getElementById('treeSwitcher');
+    treeSwitcher?.addEventListener('change', async (event) => {
       const nextTreeId = event.target.value;
       if (!nextTreeId) return;
-      window.location.href = `{% url 'tree:tree' %}?tree_id=${encodeURIComponent(nextTreeId)}`;
+      const targetUrl = `{% url 'tree:tree' %}?tree_id=${encodeURIComponent(nextTreeId)}`;
+      if (treeHasUnsavedVersion) {
+        const action = await promptTreeNavigation(targetUrl);
+        if (action === 'cancel') event.target.value = CURRENT_TREE_ID;
+        return;
+      }
+      window.location.href = targetUrl;
     });
 
     let treeHasUnsavedVersion = false;
@@ -866,17 +886,65 @@
       if (saveBtn) saveBtn.textContent = 'Save Tree';
     }
 
-    async function saveTreeVersion() {
+    async function saveTreeVersion(comment = '') {
       const label = `Saved tree - ${new Date().toLocaleString()}`;
       const res = await fetch(treeApiUrl('/api/tree/versions/save/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-        body: JSON.stringify({ label }),
+        body: JSON.stringify({ label, comment }),
       });
       if (!res.ok) throw new Error('Could not save tree version');
       treeBaselineSnapshot = currentTreeSnapshot();
       clearTreeDirty();
       showToast('Tree version saved.', 'success');
+    }
+
+    function promptSaveVersionComment() {
+      return new Promise((resolve) => {
+        const existing = document.querySelector('.app-confirm');
+        if (existing) existing.remove();
+
+        const modalEl = document.createElement('div');
+        modalEl.className = 'app-confirm';
+        modalEl.setAttribute('role', 'dialog');
+        modalEl.setAttribute('aria-modal', 'true');
+        modalEl.innerHTML = `
+          <div class="app-confirm__dialog">
+            <div class="app-confirm__card">
+              <div class="app-confirm__header">
+                <h5 class="app-confirm__title">Save tree version</h5>
+                <button type="button" class="app-confirm__x" data-role="cancel" aria-label="Close">x</button>
+              </div>
+              <div class="app-confirm__body">
+                Add an optional comment for this saved version.
+                <textarea id="saveVersionComment" maxlength="2000" placeholder="What changed in this tree?"></textarea>
+                <span class="app-confirm__hint">Leave it empty to save without a comment.</span>
+              </div>
+              <div class="app-confirm__footer">
+                <button type="button" class="btn btn--ghost" data-role="cancel">Cancel</button>
+                <button type="button" class="btn btn--primary" data-role="save">Save</button>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modalEl);
+        document.body.classList.add('confirm-open');
+        const textarea = modalEl.querySelector('#saveVersionComment');
+        textarea?.focus();
+
+        const finish = (value) => {
+          modalEl.remove();
+          document.body.classList.remove('confirm-open');
+          resolve(value);
+        };
+
+        modalEl.querySelector('[data-role="save"]').addEventListener('click', () => {
+          finish((textarea?.value || '').trim());
+        });
+        modalEl.querySelectorAll('[data-role="cancel"]').forEach(el => {
+          el.addEventListener('click', () => finish(null));
+        });
+      });
     }
 
     async function discardTreeChanges() {
@@ -910,7 +978,10 @@
                 <h5 class="app-confirm__title">Save tree version?</h5>
                 <button type="button" class="app-confirm__x" data-role="cancel" aria-label="Close">x</button>
               </div>
-              <div class="app-confirm__body">Your tree has changes that have not been saved as a version.</div>
+              <div class="app-confirm__body">
+                Your tree has changes that have not been saved as a version.
+                <textarea id="navigationSaveComment" maxlength="2000" placeholder="Optional comment if you save before leaving"></textarea>
+              </div>
               <div class="app-confirm__footer">
                 <button type="button" class="btn btn--ghost" data-role="cancel">Cancel</button>
                 <button type="button" class="btn btn--ghost" data-role="leave">Don't Save</button>
@@ -933,7 +1004,8 @@
           saveButton.disabled = true;
           saveButton.textContent = 'Saving...';
           try {
-            await saveTreeVersion();
+            const comment = (modalEl.querySelector('#navigationSaveComment')?.value || '').trim();
+            await saveTreeVersion(comment);
             finish('save');
             window.location.href = targetUrl;
           } catch (_) {
@@ -964,15 +1036,46 @@
 
     document.getElementById('saveTreeBtn')?.addEventListener('click', async () => {
       const saveBtn = document.getElementById('saveTreeBtn');
+      const comment = await promptSaveVersionComment();
+      if (comment === null) return;
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving...';
       try {
-        await saveTreeVersion();
+        await saveTreeVersion(comment);
       } catch (_) {
         showToast('Could not save this tree version.', 'error');
       } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = treeHasUnsavedVersion ? 'Save Tree *' : 'Save Tree';
+      }
+    });
+
+    document.getElementById('deleteTreeBtn')?.addEventListener('click', async () => {
+      const treeName = treeSwitcher?.selectedOptions?.[0]?.textContent?.trim() || 'this tree';
+      const ok = await confirmAction(
+        `Delete "${treeName}"? This removes its nodes, connections, and saved versions.`,
+        'Delete tree'
+      );
+      if (!ok) return;
+      const button = document.getElementById('deleteTreeBtn');
+      button.disabled = true;
+      button.textContent = 'Deleting...';
+      try {
+        const res = await fetch(`/api/trees/${CURRENT_TREE_ID}/`, {
+          method: 'DELETE',
+          headers: { 'X-CSRFToken': getCsrf() },
+        });
+        if (!res.ok) throw new Error('Could not delete tree');
+        const payload = await res.json();
+        showToast('Tree deleted.', 'success');
+        const nextUrl = payload.next_tree_id
+          ? `{% url 'tree:tree' %}?tree_id=${encodeURIComponent(payload.next_tree_id)}`
+          : `{% url 'tree:tree' %}`;
+        window.location.href = nextUrl;
+      } catch (_) {
+        button.disabled = false;
+        button.textContent = 'Delete Tree';
+        showToast('Could not delete this tree.', 'error');
       }
     });
 
@@ -3061,6 +3164,7 @@
             <article class="version-card">
               <strong>${escapeHtml(version.label || 'Tree version')}</strong>
               <span>${escapeHtml(formatVersionDate(version.created_at))} - ${version.node_count} nodes, ${version.edge_count} links</span>
+              ${version.comment ? `<p>${escapeHtml(version.comment)}</p>` : ''}
               <button class="btn btn--ghost btn--sm" type="button" data-version-id="${version.id}">Restore this version</button>
             </article>
           `).join('');

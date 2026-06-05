@@ -851,6 +851,27 @@ def tree_list(request):
     return Response(TreeSerializer(tree).data, status=status.HTTP_201_CREATED)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def tree_detail(request, tree_id):
+    tree = get_object_or_404(Tree.objects.filter(user=request.user), pk=tree_id)
+    was_default = tree.is_default
+    deleted_tree_id = tree.id
+    tree.delete()
+
+    next_tree = Tree.objects.filter(user=request.user).order_by('-is_default', 'created_at').first()
+    if next_tree and (was_default or not Tree.objects.filter(user=request.user, is_default=True).exists()):
+        if not next_tree.is_default:
+            next_tree.is_default = True
+            next_tree.save(update_fields=['is_default', 'updated_at'])
+
+    _invalidate_tree_cache(request.user.id, deleted_tree_id)
+    return Response({
+        'detail': 'Tree deleted.',
+        'next_tree_id': next_tree.id if next_tree else None,
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def tree_auto_from_shelf(request):
@@ -918,9 +939,10 @@ def tree_version_list(request):
 def tree_version_create(request):
     tree = _get_tree_from_request(request)
     label = (request.data.get('label') or '').strip()[:180]
+    comment = (request.data.get('comment') or '').strip()[:2000]
     if not label:
         label = 'Saved tree version'
-    version = _create_tree_version(request.user, tree, label, 'manual_save')
+    version = _create_tree_version(request.user, tree, label, 'manual_save', comment=comment)
     return Response(TreeVersionSerializer(version).data, status=status.HTTP_201_CREATED)
 
 
@@ -1647,12 +1669,13 @@ def _matching_counter_key(counter, value):
     return ''
 
 
-def _create_tree_version(user, tree, label, reason='manual'):
+def _create_tree_version(user, tree, label, reason='manual', comment=''):
     snapshot = _build_tree_snapshot(user, tree)
     return TreeVersion.objects.create(
         user=user,
         tree=tree,
         label=label,
+        comment=comment,
         reason=reason,
         snapshot=snapshot,
     )

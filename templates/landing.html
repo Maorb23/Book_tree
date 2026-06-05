@@ -68,15 +68,21 @@
       {% for rec in recommended_books %}
       <a class="book-link" href="{% url 'tree:book' %}?title={{ rec.title|urlencode }}{% if rec.author %}&author={{ rec.author|urlencode }}{% endif %}{% if rec.isbn %}&isbn={{ rec.isbn|urlencode }}{% endif %}{% if rec.genre %}&genre={{ rec.genre|urlencode }}{% endif %}{% if rec.year %}&year={{ rec.year|urlencode }}{% endif %}{% if rec.cover_url %}&cover={{ rec.cover_url|urlencode }}{% endif %}{% if rec.description %}&description={{ rec.description|urlencode }}{% endif %}" aria-label="Open {{ rec.title }} details">
         <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
-          <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
-          <h3>{{ rec.title }}</h3>
-          {% if rec.author %}<p class="book-card__author">{{ rec.author }}</p>{% endif %}
+          <span class="book-card__cover" aria-hidden="true"></span>
+          <span class="book-card__content">
+            <span class="book-card__meta">{{ rec.genre|default:'Recommended' }}</span>
+            <span class="book-card__title">{{ rec.title }}</span>
+            {% if rec.author %}<span class="book-card__author">{{ rec.author }}</span>{% endif %}
+          </span>
         </article>
       </a>
       {% empty %}
       <article class="book-card book-card--blue">
-        <span class="book-card__meta">Recommendations</span>
-        <h3>Add books to your tree to power community picks</h3>
+        <span class="book-card__cover" aria-hidden="true"></span>
+        <span class="book-card__content">
+          <span class="book-card__meta">Recommendations</span>
+          <span class="book-card__title">Add books to your tree to power community picks</span>
+        </span>
       </article>
       {% endfor %}
     </div>
@@ -91,7 +97,7 @@
       <p class="section-sub">Every branch shows genres, every node is a book, every connection is your personal reading story.</p>
     </div>
     <div class="preview__canvas" id="previewCanvas">
-      <canvas id="miniTree"></canvas>
+      <img class="preview__image" src="{% static 'img/readwoods-tree-preview.png' %}" alt="Readwoods tree preview with book and author nodes connected by glowing branches" loading="lazy" decoding="async">
       <div class="preview__overlay">
         <a href="{% url 'tree:tree' %}" class="btn btn--ghost">Explore Full Tree</a>
       </div>
