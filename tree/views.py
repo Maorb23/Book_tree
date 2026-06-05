@@ -1987,6 +1987,14 @@ def _safe_int(value):
     return parsed if 0 < parsed < 3000 else None
 
 
+def _safe_count(value):
+    try:
+        parsed = int(str(value or '').strip())
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
 def _safe_float(value):
     try:
         parsed = float(str(value or '').strip())
@@ -2155,6 +2163,20 @@ def _search_books_combined(query):
                 or [row.get('isbn'), google_match.get('isbn')]
             ),
             'description': row.get('description') or google_match.get('description') or '',
+            'edition_count': canonical.get('edition_count') or row.get('edition_count') or '',
+            'ratings_count': (
+                canonical.get('ratings_count')
+                or row.get('ratings_count')
+                or google_match.get('ratings_count')
+                or ''
+            ),
+            'average_rating': (
+                canonical.get('average_rating')
+                or row.get('average_rating')
+                or google_match.get('average_rating')
+                or ''
+            ),
+            'reader_count': canonical.get('reader_count') or row.get('reader_count') or '',
         }
         if canonical.get('cover_url') and not merged_row.get('cover_url'):
             merged_row['cover_url'] = canonical['cover_url']
@@ -2206,6 +2228,10 @@ def _book_rank(row, query):
         score += 6
     if ',' not in str(row.get('author') or ''):
         score += 4
+    score += _safe_count(row.get('edition_count')) // 12
+    score += min(_safe_count(row.get('ratings_count')) // 5, 18)
+    score += min(_safe_count(row.get('reader_count')) // 20, 16)
+    score += _known_book_rank_boost(row)
     return score
 
 
@@ -2247,6 +2273,7 @@ def _google_volume_to_row(item):
     published = info.get('publishedDate') or ''
     year = (published[:4] if published else '')
     desc = info.get('description') or ''
+    ratings_count = _safe_count(info.get('ratingsCount'))
 
     isbn_13 = ''
     isbn_10 = ''
@@ -2277,6 +2304,8 @@ def _google_volume_to_row(item):
         'isbn_options': [isbn_13, isbn_10],
         'cover_url': cover_url,
         'description': desc,
+        'ratings_count': ratings_count,
+        'average_rating': info.get('averageRating') or '',
         '_score': has_cover * 4 + has_author * 2,
     }
 
@@ -2284,7 +2313,7 @@ def _google_volume_to_row(item):
 def _search_books_google_isbn(isbn):
     resp = requests.get(
         'https://www.googleapis.com/books/v1/volumes',
-        params={'q': f'isbn:{isbn}', 'maxResults': 3, 'printType': 'books'},
+        params=_google_books_params({'q': f'isbn:{isbn}', 'maxResults': 3, 'printType': 'books'}),
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
         timeout=3.5,
     )
@@ -2299,7 +2328,19 @@ def _search_books_google_isbn(isbn):
 
 
 def _apply_known_book_metadata(row):
-    overrides = {
+    overrides = _known_book_overrides()
+    author_key = _normalize_text((row.get('author') or '').split(',')[0])
+    override = overrides.get((_normalize_text(row.get('title')), author_key))
+    return {**row, **override} if override else row
+
+
+def _known_book_rank_boost(row):
+    author_key = _normalize_text((row.get('author') or '').split(',')[0])
+    return 65 if (_normalize_text(row.get('title')), author_key) in _known_book_overrides() else 0
+
+
+def _known_book_overrides():
+    return {
         ('the grapes of wrath', 'john steinbeck'): {
             'isbn': '9780143039433',
             'year': '1939',
@@ -2348,20 +2389,41 @@ def _apply_known_book_metadata(row):
             'cover_url': _open_library_cover_url('9780807083697'),
             'genre': 'Fiction - Science Fiction',
         },
+        ('the tunnel', 'william h gass'): {
+            'year': '1995',
+            'genre': 'Fiction - Literary',
+        },
+        ('the tunnel', 'william gass'): {
+            'year': '1995',
+            'genre': 'Fiction - Literary',
+        },
+        ('the recognitions', 'william gaddis'): {
+            'year': '1955',
+            'genre': 'Fiction - Literary',
+        },
+        ('jr', 'william gaddis'): {
+            'year': '1975',
+            'genre': 'Fiction - Literary',
+        },
+        ('gravity s rainbow', 'thomas pynchon'): {
+            'year': '1973',
+            'genre': 'Fiction - Literary',
+        },
+        ('white noise', 'don delillo'): {
+            'year': '1985',
+            'genre': 'Fiction - Literary',
+        },
     }
-    author_key = _normalize_text((row.get('author') or '').split(',')[0])
-    override = overrides.get((_normalize_text(row.get('title')), author_key))
-    return {**row, **override} if override else row
 
 
 def _search_books_google(query, max_results=8):
     resp = requests.get(
         'https://www.googleapis.com/books/v1/volumes',
-        params={
+        params=_google_books_params({
             'q': f'intitle:{query}',
             'maxResults': max_results,
             'printType': 'books',
-        },
+        }),
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
         timeout=3.5,
     )
@@ -2395,7 +2457,15 @@ def _search_books_google(query, max_results=8):
 def _search_books_open_library(query, max_results=8):
     resp = requests.get(
         'https://openlibrary.org/search.json',
-        params={'q': query, 'limit': max_results, 'fields': 'title,author_name,subject,first_publish_year,isbn,cover_i,key'},
+        params={
+            'q': query,
+            'limit': max_results,
+            'fields': (
+                'title,author_name,subject,first_publish_year,isbn,cover_i,key,'
+                'edition_count,ratings_average,ratings_count,want_to_read_count,'
+                'currently_reading_count,already_read_count'
+            ),
+        },
         headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
         timeout=3.5,
     )
@@ -2422,6 +2492,11 @@ def _search_books_open_library(query, max_results=8):
 
         cover_i = doc.get('cover_i')
         cover_url = f'https://covers.openlibrary.org/b/id/{cover_i}-L.jpg' if cover_i else ''
+        reader_count = (
+            _safe_count(doc.get('want_to_read_count'))
+            + _safe_count(doc.get('currently_reading_count'))
+            + _safe_count(doc.get('already_read_count'))
+        )
 
         results.append({
             'title': title,
@@ -2432,6 +2507,10 @@ def _search_books_open_library(query, max_results=8):
             'isbn_options': normalized_isbns,
             'cover_url': cover_url,
             'description': '',
+            'edition_count': _safe_count(doc.get('edition_count')),
+            'ratings_count': _safe_count(doc.get('ratings_count')),
+            'average_rating': doc.get('ratings_average') or '',
+            'reader_count': reader_count,
         })
 
     return results
@@ -2479,7 +2558,7 @@ def _fetch_cover_google(title, author=''):
             q += f"+inauthor:{author}"
         resp = requests.get(
             'https://www.googleapis.com/books/v1/volumes',
-            params={'q': q, 'maxResults': 1},
+            params=_google_books_params({'q': q, 'maxResults': 1}),
             timeout=3,
         )
         data = resp.json()
@@ -2663,3 +2742,11 @@ def _fetch_open_graph_image(url):
     except Exception:
         logger.debug('Could not fetch content image for %s', url, exc_info=True)
     return ''
+
+
+def _google_books_params(params):
+    params = dict(params)
+    api_key = getattr(settings, 'GOOGLE_BOOKS_API_KEY', '')
+    if api_key:
+        params['key'] = api_key
+    return params

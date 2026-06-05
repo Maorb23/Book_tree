@@ -16,7 +16,10 @@ from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
-from .views import _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books, _search_authors_open_library
+from .views import (
+    _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books,
+    _search_authors_open_library, _search_books_google, _search_books_open_library,
+)
 from book_tree.settings import _email_env
 
 
@@ -210,6 +213,55 @@ class BookSearchMetadataTests(SimpleTestCase):
         unrelated = {'title': 'Frank Herbert', 'author': 'William Touponce', 'year': '1988', 'isbn': '9780809313938'}
 
         self.assertGreater(_book_rank(dune, 'Dune Frank Herbert'), _book_rank(unrelated, 'Dune Frank Herbert'))
+
+    def test_book_rank_prefers_known_literary_title_for_title_only_search(self):
+        gass = {'title': 'The Tunnel', 'author': 'William H. Gass'}
+        thriller = {
+            'title': 'The Tunnel',
+            'author': 'Popular Thriller Author',
+            'year': '2018',
+            'isbn': '9780000000000',
+            'cover_url': 'https://example.com/tunnel.jpg',
+        }
+
+        self.assertGreater(_book_rank(gass, 'The Tunnel'), _book_rank(thriller, 'The Tunnel'))
+
+    @patch('tree.views.requests.get')
+    def test_open_library_search_uses_popularity_signals(self, mock_get):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            'docs': [{
+                'title': 'The Tunnel',
+                'author_name': ['William H. Gass'],
+                'first_publish_year': 1995,
+                'isbn': ['9780000000000'],
+                'edition_count': 24,
+                'ratings_count': 12,
+                'ratings_average': 4.1,
+                'want_to_read_count': 40,
+                'currently_reading_count': 3,
+                'already_read_count': 80,
+            }]
+        }
+
+        results = _search_books_open_library('The Tunnel')
+
+        params = mock_get.call_args.kwargs['params']
+        self.assertIn('edition_count', params['fields'])
+        self.assertIn('ratings_count', params['fields'])
+        self.assertEqual(results[0]['edition_count'], 24)
+        self.assertEqual(results[0]['reader_count'], 123)
+
+    @override_settings(GOOGLE_BOOKS_API_KEY='test-google-books-key')
+    @patch('tree.views.requests.get')
+    def test_google_books_search_sends_configured_api_key(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {'items': []}
+
+        _search_books_google('Dune')
+
+        self.assertEqual(mock_get.call_args.kwargs['params']['key'], 'test-google-books-key')
 
     @patch('tree.views.requests.get')
     def test_author_search_returns_author_node_payloads(self, mock_get):
