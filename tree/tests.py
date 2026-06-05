@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core import mail
 from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
@@ -15,7 +16,7 @@ from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
-from .views import _apply_known_book_metadata, _book_rank, _get_library_books, _search_authors_open_library
+from .views import _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books, _search_authors_open_library
 from book_tree.settings import _email_env
 
 
@@ -235,6 +236,7 @@ class BookSearchMetadataTests(SimpleTestCase):
 
 class GoodreadsImportTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = User.objects.create_user(username='reader', password='pass1234')
         self.client.force_login(self.user)
 
@@ -482,6 +484,40 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(author.year, 1937)
         self.assertEqual(author.cover_image, 'https://example.com/pynchon.jpg')
         self.assertEqual(TreeVersion.objects.filter(user=self.user, reason='auto_tree').count(), 1)
+
+    @patch('tree.views._search_authors_open_library')
+    @patch('tree.views._search_books_combined', return_value=[])
+    def test_auto_tree_retries_empty_author_cache_for_author_images(self, mock_book_search, mock_author_search):
+        cache.set(_cache_key('auto-tree:author:v1', 'don delillo'), [], timeout=60 * 60 * 24)
+        mock_author_search.return_value = [{
+            'title': 'Don DeLillo',
+            'node_type': 'author',
+            'year': '1936',
+            'cover_url': 'https://covers.openlibrary.org/a/olid/OL28267A-M.jpg',
+            'description': 'White Noise',
+        }]
+        ImportedBook.objects.create(
+            user=self.user,
+            title='White Noise',
+            author='Don DeLillo',
+            custom_shelf='postmodern',
+            isbn='9780143105985',
+        )
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': 'postmodern',
+                'shelf_type': 'custom',
+                'mode': 'author',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        author = Node.objects.get(user=self.user, node_type='author', title='Don DeLillo')
+        self.assertEqual(author.cover_image, 'https://covers.openlibrary.org/a/olid/OL28267A-L.jpg')
+        mock_author_search.assert_called_once()
 
     @patch('tree.views._search_authors_open_library', return_value=[])
     @patch('tree.views._search_books_combined', return_value=[])

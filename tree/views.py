@@ -1371,7 +1371,7 @@ def _enrich_author_for_auto_tree(author_name, allow_network=False):
     cached = cache.get(cache_key)
     if cached is None:
         cached = cache.get(_cache_key('author-search:v1', author_name.lower()))
-    if cached is None:
+    if cached is None or (allow_network and cached == []):
         if not allow_network:
             return payload
         cached = _safe_external_lookup(
@@ -1379,20 +1379,27 @@ def _enrich_author_for_auto_tree(author_name, allow_network=False):
             'Auto tree author lookup failed for query=%r',
             author_name,
         )
-        cache.set(cache_key, cached, timeout=60 * 60 * 24)
+        cache.set(cache_key, cached, timeout=60 * 60 * 24 if cached else 60 * 5)
 
     if cached:
         exact = next(
             (row for row in cached if _normalize_text(row.get('title')) == _normalize_text(author_name)),
             cached[0],
         )
+        cover_url = _large_author_cover_url(exact.get('cover_url') or '')
         payload.update({
             'title': exact.get('title') or author_name,
             'year': _safe_int(exact.get('year')),
-            'cover_url': exact.get('cover_url') or '',
+            'cover_url': cover_url,
             'description': exact.get('description') or '',
         })
     return payload
+
+
+def _large_author_cover_url(cover_url):
+    if 'covers.openlibrary.org/a/olid/' not in (cover_url or ''):
+        return cover_url or ''
+    return re.sub(r'-[SML]\.jpg$', '-L.jpg', cover_url)
 
 
 def _safe_external_lookup(fetcher, log_message, log_arg):

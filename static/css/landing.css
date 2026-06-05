@@ -92,9 +92,12 @@ body {
 
 .hero__bg {
   background:
-    radial-gradient(70% 58% at 50% 38%, rgba(88, 118, 90, 0.55), rgba(10, 14, 11, 0.2)),
-    repeating-linear-gradient(90deg, rgba(29, 41, 28, 0.5) 0px, rgba(29, 41, 28, 0.5) 2px, transparent 2px, transparent 22px),
-    linear-gradient(180deg, rgba(10, 14, 11, 0.35), rgba(9, 12, 10, 0.86));
+    radial-gradient(58% 48% at 50% 42%, rgba(10, 14, 11, 0.16), rgba(7, 9, 8, 0.82)),
+    linear-gradient(180deg, rgba(5, 7, 6, 0.42), rgba(7, 10, 8, 0.9)),
+    url("../img/readwoods-tree-hero.png");
+  background-position: center;
+  background-size: cover;
+  filter: saturate(1.08) contrast(1.04);
 }
 
 .hero__grain {
