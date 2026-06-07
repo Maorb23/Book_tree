@@ -31,6 +31,7 @@
   const descEl = document.getElementById('bookDescription');
   const metaList = document.getElementById('bookMetaList');
   const searchLink = document.getElementById('bookSearchLink');
+  const criticReviewsEl = document.getElementById('criticReviews');
   const addReviewBtn = document.getElementById('addBookReview');
   const reviewBox = document.getElementById('bookReviewBox');
   let currentInfo = null;
@@ -55,6 +56,10 @@
     if (info.genre) chips.push(info.genre);
     if (info.year) chips.push(info.year);
     if (info.isbn) chips.push(`ISBN ${info.isbn}`);
+    if (info.average_rating) {
+      const count = info.ratings_count ? ` (${info.ratings_count})` : '';
+      chips.push(`Google Books ${info.average_rating}/5${count}`);
+    }
     chips.forEach(text => {
       const span = document.createElement('span');
       span.textContent = text;
@@ -70,6 +75,8 @@
       ['Genre', info.genre],
       ['Year', info.year],
       ['ISBN', info.isbn],
+      ['Google Books rating', info.average_rating ? `${info.average_rating}/5` : ''],
+      ['Google Books ratings count', info.ratings_count],
     ];
     rows.forEach(([label, value]) => {
       if (!value) return;
@@ -119,6 +126,43 @@
       renderReview((data || [])[0] || null);
     } catch (_) {
       renderReview(null);
+    }
+  }
+
+  function renderCriticReviews(results, detail) {
+    if (!criticReviewsEl) return;
+    if (!results || !results.length) {
+      criticReviewsEl.innerHTML = `<p class="critic-review-empty">${escapeHtml(detail || 'No critic reviews found for this book yet.')}</p>`;
+      return;
+    }
+    criticReviewsEl.innerHTML = `
+      <div class="critic-review-list">
+        ${results.map(review => `
+          <article class="critic-review">
+            <span>${escapeHtml(review.source || 'Critic review')}${review.published_date ? ` · ${escapeHtml(review.published_date)}` : ''}</span>
+            <strong>${escapeHtml(review.review_title || review.book_title || 'Review')}</strong>
+            ${review.reviewer ? `<span>${escapeHtml(review.reviewer)}</span>` : ''}
+            ${review.summary ? `<p>${escapeHtml(review.summary)}</p>` : ''}
+            <a class="btn btn--ghost btn--sm" href="${escapeHtml(review.url)}" target="_blank" rel="noopener">Read review</a>
+          </article>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function loadCriticReviews(info) {
+    if (!criticReviewsEl) return;
+    criticReviewsEl.textContent = 'Looking for critic reviews...';
+    const params = new URLSearchParams();
+    if (info.title) params.set('title', info.title);
+    if (info.author) params.set('author', info.author);
+    if (info.isbn) params.set('isbn', info.isbn);
+    try {
+      const res = await fetch(`/api/critic-reviews/?${params.toString()}`);
+      const data = await res.json();
+      renderCriticReviews(data.results || [], data.detail || '');
+    } catch (_) {
+      renderCriticReviews([], 'Critic reviews are unavailable right now.');
     }
   }
 
@@ -198,6 +242,8 @@
         isbn: result.isbn || isbnSeed || '',
         description: result.description || descriptionSeed || 'No description available.',
         cover_url: result.cover_url || coverSeed || '',
+        average_rating: result.average_rating || '',
+        ratings_count: result.ratings_count || '',
       };
       currentInfo = info;
 
@@ -209,6 +255,7 @@
       setMetaList(info);
       setSearchLink(`${info.title} ${info.author}`);
       loadReview(info);
+      loadCriticReviews(info);
     } catch (err) {
       titleEl.textContent = titleSeed || 'Book details';
       authorEl.textContent = authorSeed || 'Search unavailable';
@@ -217,6 +264,7 @@
       setInfoChips({});
       setMetaList({});
       loadReview({ title: titleSeed, author: authorSeed, isbn: isbnSeed, cover_url: coverSeed });
+      loadCriticReviews({ title: titleSeed, author: authorSeed, isbn: isbnSeed });
     }
   }
 

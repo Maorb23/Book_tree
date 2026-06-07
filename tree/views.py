@@ -2307,6 +2307,42 @@ def search_authors(request):
     return Response({'results': results})
 
 
+@api_view(['GET'])
+def critic_reviews(request):
+    title = (request.query_params.get('title') or '').strip()
+    author = (request.query_params.get('author') or '').strip()
+    isbn = _normalize_goodreads_isbn(request.query_params.get('isbn'))
+    if not title and not isbn:
+        return Response({'results': [], 'detail': 'No book title or ISBN was provided.'})
+
+    cache_value = isbn or f'{title}:{author}'
+    cache_key = _cache_key('critic-reviews:nyt:v1', cache_value.lower())
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
+    if not getattr(settings, 'NYTIMES_BOOKS_API_KEY', ''):
+        payload = {
+            'results': [],
+            'detail': 'No NYTimes critic reviews are configured yet.',
+        }
+        cache.set(cache_key, payload, timeout=60 * 30)
+        return Response(payload)
+
+    try:
+        results = _search_nytimes_book_reviews(title=title, author=author, isbn=isbn)
+    except Exception:
+        logger.exception('NYTimes book review lookup failed for title=%r author=%r isbn=%r', title, author, isbn)
+        results = []
+
+    payload = {
+        'results': results,
+        'detail': '' if results else 'No New York Times critic review was found for this book.',
+    }
+    cache.set(cache_key, payload, timeout=60 * 60 * 24 * 14)
+    return Response(payload)
+
+
 def _cache_key(prefix, value):
     digest = hashlib.sha256(str(value or '').encode('utf-8')).hexdigest()[:24]
     return f'{prefix}:{digest}'
@@ -2764,6 +2800,43 @@ def _search_authors_open_library(query, max_results=8, timeout=3.5):
     for row in results:
         row.pop('_score', None)
     return results[:max_results]
+
+
+def _search_nytimes_book_reviews(title='', author='', isbn=''):
+    params = {
+        'api-key': settings.NYTIMES_BOOKS_API_KEY,
+    }
+    if isbn:
+        params['isbn'] = isbn
+    else:
+        params['title'] = title
+        if author:
+            params['author'] = author
+
+    resp = requests.get(
+        'https://api.nytimes.com/svc/books/v3/reviews.json',
+        params=params,
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=3.5,
+    )
+    resp.raise_for_status()
+    rows = resp.json().get('results') or []
+    results = []
+    for row in rows[:5]:
+        url = row.get('url') or ''
+        if not url:
+            continue
+        results.append({
+            'source': 'The New York Times',
+            'book_title': row.get('book_title') or title,
+            'book_author': row.get('book_author') or author,
+            'review_title': row.get('headline') or row.get('summary') or 'NYTimes Review',
+            'reviewer': row.get('byline') or '',
+            'published_date': row.get('publication_dt') or '',
+            'summary': row.get('summary') or '',
+            'url': url,
+        })
+    return results
 
 
 def _fetch_cover_google(title, author=''):

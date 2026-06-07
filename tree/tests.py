@@ -19,6 +19,7 @@ from .models import (
 from .views import (
     _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books,
     _search_authors_open_library, _search_books_google, _search_books_open_library,
+    _google_volume_to_row,
 )
 from book_tree.settings import _email_env
 
@@ -262,6 +263,49 @@ class BookSearchMetadataTests(SimpleTestCase):
         _search_books_google('Dune')
 
         self.assertEqual(mock_get.call_args.kwargs['params']['key'], 'test-google-books-key')
+
+    def test_google_volume_to_row_includes_rating_metadata(self):
+        row = _google_volume_to_row({
+            'volumeInfo': {
+                'title': 'Dune',
+                'authors': ['Frank Herbert'],
+                'averageRating': 4.5,
+                'ratingsCount': 123,
+            }
+        })
+
+        self.assertEqual(row['average_rating'], 4.5)
+        self.assertEqual(row['ratings_count'], 123)
+
+    @override_settings(NYTIMES_BOOKS_API_KEY='nyt-test-key')
+    @patch('tree.views.requests.get')
+    def test_critic_reviews_uses_nytimes_api_key(self, mock_get):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            'results': [{
+                'book_title': 'Dune',
+                'book_author': 'Frank Herbert',
+                'headline': 'A Desert Epic',
+                'byline': 'A Critic',
+                'publication_dt': '1965-01-01',
+                'summary': 'A review summary.',
+                'url': 'https://www.nytimes.com/review/dune',
+            }]
+        }
+
+        response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune', 'author': 'Frank Herbert'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['results'][0]['source'], 'The New York Times')
+        self.assertEqual(mock_get.call_args.kwargs['params']['api-key'], 'nyt-test-key')
+
+    @override_settings(NYTIMES_BOOKS_API_KEY='')
+    def test_critic_reviews_returns_disclaimer_without_key(self):
+        response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['results'], [])
+        self.assertIn('configured', response.json()['detail'])
 
     @patch('tree.views.requests.get')
     def test_author_search_returns_author_node_payloads(self, mock_get):

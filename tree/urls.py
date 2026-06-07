@@ -49,6 +49,7 @@ urlpatterns = [
     path('api/edges/<str:pk>/', views.edge_detail, name='api-edge-detail'),
     path('api/cover/', views.fetch_cover, name='api-cover'),
     path('api/book-search/', views.search_books, name='api-book-search'),
+    path('api/critic-reviews/', views.critic_reviews, name='api-critic-reviews'),
     path('api/author-search/', views.search_authors, name='api-author-search'),
     path('api/challenges/target/', views.challenge_target_update, name='api-challenge-target'),
     path('api/reading-updates/', views.reading_update_create, name='api-reading-update'),

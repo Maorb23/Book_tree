@@ -179,6 +179,7 @@ RESEND_API_KEY = _env('RESEND_API_KEY')
 RESEND_API_URL = _env('RESEND_API_URL', 'https://api.resend.com/emails')
 RESEND_TIMEOUT = _int_env('RESEND_TIMEOUT', 10)
 GOOGLE_BOOKS_API_KEY = _env('GOOGLE_BOOKS_API_KEY')
+NYTIMES_BOOKS_API_KEY = _env('NYTIMES_BOOKS_API_KEY')
 EMAIL_PROVIDER = _env('EMAIL_PROVIDER', 'resend' if RESEND_API_KEY else '').lower()
 EMAIL_BACKEND = (
     'tree.email_backends.ResendEmailBackend'

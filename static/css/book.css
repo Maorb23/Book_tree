@@ -234,6 +234,35 @@ body {
   color: var(--book-muted);
 }
 
+.critic-reviews-card {
+  grid-column: 1 / -1;
+}
+
+.critic-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.critic-review {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid rgba(157, 204, 122, 0.22);
+  border-radius: 12px;
+  background: rgba(9, 14, 10, 0.55);
+}
+
+.critic-review strong {
+  color: #f3fbef;
+}
+
+.critic-review span,
+.critic-review p,
+.critic-review-empty {
+  color: var(--book-muted);
+  line-height: 1.5;
+}
+
 @media (max-width: 880px) {
   .book-hero__content {
     grid-template-columns: 1fr;
