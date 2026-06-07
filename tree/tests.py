@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import date, timedelta
 import json
 
@@ -277,46 +277,45 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(row['average_rating'], 4.5)
         self.assertEqual(row['ratings_count'], 123)
 
-    @override_settings(NYTIMES_BOOKS_API_KEY='nyt-test-key')
+    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='nyt-test-key')
     @patch('tree.views.requests.get')
     def test_critic_reviews_uses_nytimes_api_key(self, mock_get):
         mock_get.return_value.raise_for_status.return_value = None
         mock_get.return_value.json.return_value = {
-            'results': [{
-                'book_title': 'Dune',
-                'book_author': 'Frank Herbert',
-                'headline': 'A Desert Epic',
-                'byline': 'A Critic',
-                'publication_dt': '1965-01-01',
-                'summary': 'A review summary.',
-                'url': 'https://www.nytimes.com/review/dune',
-            }]
+            'response': {
+                'docs': [{
+                    'headline': {'main': 'A Desert Epic'},
+                    'byline': {'original': 'By A Critic'},
+                    'pub_date': '1965-01-01T00:00:00Z',
+                    'abstract': 'A review summary.',
+                    'web_url': 'https://www.nytimes.com/review/dune',
+                }]
+            }
         }
 
         response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune', 'author': 'Frank Herbert'})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['results'][0]['source'], 'The New York Times')
+        self.assertEqual(response.json()['results'][0]['review_title'], 'A Desert Epic')
         self.assertEqual(mock_get.call_args.kwargs['params']['api-key'], 'nyt-test-key')
+        self.assertEqual(mock_get.call_args.kwargs['params']['sort'], 'relevance')
+        self.assertIn('"Dune"', mock_get.call_args.kwargs['params']['q'])
+        self.assertIn('"Frank Herbert"', mock_get.call_args.kwargs['params']['q'])
+        self.assertEqual(mock_get.call_args.args[0], 'https://api.nytimes.com/svc/search/v2/articlesearch.json')
 
-    @override_settings(NYTIMES_BOOKS_API_KEY='nyt-test-key')
+    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='nyt-test-key')
     @patch('tree.views.requests.get')
-    def test_critic_reviews_falls_back_to_title_after_isbn_404(self, mock_get):
-        isbn_response = Mock(status_code=404)
-        title_response = Mock(status_code=200)
-        title_response.raise_for_status.return_value = None
-        title_response.json.return_value = {
-            'results': [{
-                'book_title': 'Dune',
-                'book_author': 'Frank Herbert',
-                'headline': 'A Desert Epic',
-                'byline': 'A Critic',
-                'publication_dt': '1965-01-01',
-                'summary': 'A review summary.',
-                'url': 'https://www.nytimes.com/review/dune',
-            }]
+    def test_critic_reviews_includes_isbn_in_article_search_query(self, mock_get):
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            'response': {
+                'docs': [{
+                    'headline': {'main': 'A Desert Epic'},
+                    'web_url': 'https://www.nytimes.com/review/dune',
+                }]
+            }
         }
-        mock_get.side_effect = [isbn_response, title_response]
 
         response = self.client.get(reverse('tree:api-critic-reviews'), {
             'title': 'Dune',
@@ -326,10 +325,9 @@ class BookSearchMetadataTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['results'][0]['book_title'], 'Dune')
-        self.assertEqual(mock_get.call_args_list[0].kwargs['params']['isbn'], '9780441172719')
-        self.assertEqual(mock_get.call_args_list[1].kwargs['params']['title'], 'Dune')
+        self.assertIn('9780441172719', mock_get.call_args.kwargs['params']['q'])
 
-    @override_settings(NYTIMES_BOOKS_API_KEY='')
+    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='')
     def test_critic_reviews_returns_disclaimer_without_key(self):
         response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune'})
 

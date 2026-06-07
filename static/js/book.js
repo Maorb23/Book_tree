@@ -132,7 +132,7 @@
   function renderCriticReviews(results, detail) {
     if (!criticReviewsEl) return;
     if (!results || !results.length) {
-      criticReviewsEl.innerHTML = `<p class="critic-review-empty">${escapeHtml(detail || 'No critic reviews found for this book yet.')}</p>`;
+      criticReviewsEl.innerHTML = `<p class="critic-review-empty">${escapeHtml(detail || 'No New York Times article or review matches found for this book yet.')}</p>`;
       return;
     }
     criticReviewsEl.innerHTML = `
@@ -143,7 +143,7 @@
             <strong>${escapeHtml(review.review_title || review.book_title || 'Review')}</strong>
             ${review.reviewer ? `<span>${escapeHtml(review.reviewer)}</span>` : ''}
             ${review.summary ? `<p>${escapeHtml(review.summary)}</p>` : ''}
-            <a class="btn btn--ghost btn--sm" href="${escapeHtml(review.url)}" target="_blank" rel="noopener">Read review</a>
+            <a class="btn btn--ghost btn--sm" href="${escapeHtml(review.url)}" target="_blank" rel="noopener">Read NYTimes match</a>
           </article>
         `).join('')}
       </div>
@@ -152,7 +152,7 @@
 
   async function loadCriticReviews(info) {
     if (!criticReviewsEl) return;
-    criticReviewsEl.textContent = 'Looking for critic reviews...';
+    criticReviewsEl.textContent = 'Looking for NYTimes article matches...';
     const params = new URLSearchParams();
     if (info.title) params.set('title', info.title);
     if (info.author) params.set('author', info.author);

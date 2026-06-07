@@ -2316,15 +2316,15 @@ def critic_reviews(request):
         return Response({'results': [], 'detail': 'No book title or ISBN was provided.'})
 
     cache_value = isbn or f'{title}:{author}'
-    cache_key = _cache_key('critic-reviews:nyt:v1', cache_value.lower())
+    cache_key = _cache_key('critic-reviews:nyt-article:v1', cache_value.lower())
     cached = cache.get(cache_key)
     if cached is not None:
         return Response(cached)
 
-    if not getattr(settings, 'NYTIMES_BOOKS_API_KEY', ''):
+    if not getattr(settings, 'NYTIMES_ARTICLE_SEARCH_API_KEY', ''):
         payload = {
             'results': [],
-            'detail': 'No NYTimes critic reviews are configured yet.',
+            'detail': 'No NYTimes Article Search API key is configured yet.',
         }
         cache.set(cache_key, payload, timeout=60 * 30)
         return Response(payload)
@@ -2332,12 +2332,12 @@ def critic_reviews(request):
     try:
         results = _search_nytimes_book_reviews(title=title, author=author, isbn=isbn)
     except Exception:
-        logger.exception('NYTimes book review lookup failed for title=%r author=%r isbn=%r', title, author, isbn)
+        logger.exception('NYTimes article lookup failed for title=%r author=%r isbn=%r', title, author, isbn)
         results = []
 
     payload = {
         'results': results,
-        'detail': '' if results else 'No New York Times critic review was found for this book.',
+        'detail': '' if results else 'No New York Times article or review match was found for this book.',
     }
     cache.set(cache_key, payload, timeout=60 * 60 * 24 * 14)
     return Response(payload)
@@ -2803,47 +2803,47 @@ def _search_authors_open_library(query, max_results=8, timeout=3.5):
 
 
 def _search_nytimes_book_reviews(title='', author='', isbn=''):
-    searches = []
-    if isbn:
-        searches.append({'isbn': isbn})
+    query_parts = []
     if title:
-        title_params = {'title': title}
-        if author:
-            title_params['author'] = author
-        searches.append(title_params)
+        query_parts.append(f'"{title}"')
+    if author:
+        query_parts.append(f'"{author}"')
+    if isbn:
+        query_parts.append(isbn)
+    if not query_parts:
+        return []
 
-    rows = []
-    for search_params in searches:
-        params = {
-            'api-key': settings.NYTIMES_BOOKS_API_KEY,
-            **search_params,
-        }
-        resp = requests.get(
-            'https://api.nytimes.com/svc/books/v3/reviews.json',
-            params=params,
-            headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-            timeout=3.5,
-        )
-        if resp.status_code == 404:
-            continue
-        resp.raise_for_status()
-        rows = resp.json().get('results') or []
-        if rows:
-            break
+    params = {
+        'api-key': settings.NYTIMES_ARTICLE_SEARCH_API_KEY,
+        'q': ' '.join(query_parts),
+        'fq': 'section_name:("Books" "Book Review" "Arts")',
+        'sort': 'relevance',
+        'page': 0,
+    }
+    resp = requests.get(
+        'https://api.nytimes.com/svc/search/v2/articlesearch.json',
+        params=params,
+        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+        timeout=3.5,
+    )
+    resp.raise_for_status()
+    rows = ((resp.json().get('response') or {}).get('docs') or [])
 
     results = []
     for row in rows[:5]:
-        url = row.get('url') or ''
+        url = row.get('web_url') or ''
         if not url:
             continue
+        headline = row.get('headline') or {}
+        byline = row.get('byline') or {}
         results.append({
             'source': 'The New York Times',
-            'book_title': row.get('book_title') or title,
-            'book_author': row.get('book_author') or author,
-            'review_title': row.get('headline') or row.get('summary') or 'NYTimes Review',
-            'reviewer': row.get('byline') or '',
-            'published_date': row.get('publication_dt') or '',
-            'summary': row.get('summary') or '',
+            'book_title': title,
+            'book_author': author,
+            'review_title': headline.get('main') or row.get('abstract') or 'NYTimes Article',
+            'reviewer': byline.get('original') or '',
+            'published_date': (row.get('pub_date') or '')[:10],
+            'summary': row.get('abstract') or row.get('snippet') or row.get('lead_paragraph') or '',
             'url': url,
         })
     return results
