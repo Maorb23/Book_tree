@@ -2803,24 +2803,34 @@ def _search_authors_open_library(query, max_results=8, timeout=3.5):
 
 
 def _search_nytimes_book_reviews(title='', author='', isbn=''):
-    params = {
-        'api-key': settings.NYTIMES_BOOKS_API_KEY,
-    }
+    searches = []
     if isbn:
-        params['isbn'] = isbn
-    else:
-        params['title'] = title
+        searches.append({'isbn': isbn})
+    if title:
+        title_params = {'title': title}
         if author:
-            params['author'] = author
+            title_params['author'] = author
+        searches.append(title_params)
 
-    resp = requests.get(
-        'https://api.nytimes.com/svc/books/v3/reviews.json',
-        params=params,
-        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-        timeout=3.5,
-    )
-    resp.raise_for_status()
-    rows = resp.json().get('results') or []
+    rows = []
+    for search_params in searches:
+        params = {
+            'api-key': settings.NYTIMES_BOOKS_API_KEY,
+            **search_params,
+        }
+        resp = requests.get(
+            'https://api.nytimes.com/svc/books/v3/reviews.json',
+            params=params,
+            headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+            timeout=3.5,
+        )
+        if resp.status_code == 404:
+            continue
+        resp.raise_for_status()
+        rows = resp.json().get('results') or []
+        if rows:
+            break
+
     results = []
     for row in rows[:5]:
         url = row.get('url') or ''
