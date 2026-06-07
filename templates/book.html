@@ -43,8 +43,14 @@
         <div class="book-hero__info" id="bookInfo"></div>
         <div class="book-hero__actions">
           <a id="bookSearchLink" class="btn btn--ghost" href="#">Search on Google Books</a>
+          {% if request.user.is_authenticated %}
+            <button id="addBookReview" class="btn btn--ghost" type="button">Add a Review</button>
+          {% endif %}
           <a href="{% url 'tree:tree' %}" class="btn btn--primary">Go to My Tree</a>
         </div>
+        {% if request.user.is_authenticated %}
+          <div class="book-review-box" id="bookReviewBox" hidden></div>
+        {% endif %}
       </div>
     </div>
   </section>

@@ -51,6 +51,7 @@
 
   function matchesFilter(card) {
     if (activeFilter === 'all') return true;
+    if (activeFilter === 'reviewed') return card.dataset.reviewed === '1';
     if (activeFilter.startsWith('custom:')) {
       return card.dataset.custom === activeFilter.slice(7).toLowerCase();
     }
@@ -90,12 +91,14 @@
       currently_reading: 0,
       read: 0,
       did_not_finish: 0,
+      reviewed: 0,
     };
     const customCounts = new Map();
 
     cards.forEach(card => {
       const shelf = card.dataset.shelf || 'want_to_read';
       if (baseCounts[shelf] !== undefined) baseCounts[shelf] += 1;
+      if (card.dataset.reviewed === '1') baseCounts.reviewed += 1;
       const custom = (card.dataset.custom || '').trim();
       const customLabel = (card.dataset.customLabel || custom).trim();
       if (custom) {
@@ -145,6 +148,62 @@
   });
 
   search?.addEventListener('input', applyFilters);
+
+  async function saveReviewForCard(card, reviewText) {
+    const res = await fetch('/api/book-reviews/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({
+        imported_book: card.dataset.source === 'imported' ? card.dataset.id : null,
+        node: card.dataset.source === 'tree' ? card.dataset.id : null,
+        title: card.querySelector('h3')?.textContent?.trim() || '',
+        author: card.dataset.author || '',
+        isbn: card.dataset.isbn || '',
+        cover_image: card.dataset.cover || '',
+        review: reviewText,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Could not save review.');
+    return data;
+  }
+
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('.add-book-review');
+    if (!button) return;
+    const card = button.closest('.library-book');
+    if (!card) return;
+    const title = card.querySelector('h3')?.textContent?.trim() || 'this book';
+    const text = window.prompt(`Review "${title}"`);
+    if (text === null) return;
+    const review = text.trim();
+    if (!review) {
+      showToast('Review cannot be empty.');
+      return;
+    }
+    button.disabled = true;
+    try {
+      await saveReviewForCard(card, review);
+      card.dataset.reviewed = '1';
+      button.textContent = 'Edit Review';
+      syncShelfTabs();
+      applyFilters();
+      showToast('Review saved.');
+    } catch (error) {
+      showToast(error.message || 'Could not save review.');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  document.addEventListener('click', event => {
+    const button = event.target.closest('.read-review-more');
+    if (!button) return;
+    const text = button.closest('.review-card')?.querySelector('.review-card__text');
+    if (!text) return;
+    text.classList.toggle('is-collapsed');
+    button.textContent = text.classList.contains('is-collapsed') ? 'Read more' : 'Show less';
+  });
 
   function openAddBooksPanel() {
     if (!addBooksPanel) return;

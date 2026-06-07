@@ -626,6 +626,70 @@ body {
   justify-content: center;
 }
 
+.reviewed-books {
+  margin-top: 28px;
+  display: grid;
+  gap: 14px;
+}
+
+.reviewed-books__head h2 {
+  font-family: var(--font-serif);
+  color: #f5fbf1;
+}
+
+.review-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(157, 204, 122, 0.24);
+  border-radius: 10px;
+  background: rgba(8, 13, 9, 0.56);
+}
+
+.review-card__cover {
+  aspect-ratio: 2 / 3;
+  border-radius: 7px;
+  overflow: hidden;
+  background: #172017;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d9ead5;
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+}
+
+.review-card__cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-card h3 {
+  font-family: var(--font-serif);
+  color: #f5fbf1;
+  margin-bottom: 4px;
+}
+
+.review-card__meta {
+  color: #a8b7a7;
+  font-size: 0.86rem;
+  margin-bottom: 8px;
+}
+
+.review-card__text {
+  color: #e7efe2;
+  line-height: 1.55;
+}
+
+.review-card__text.is-collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .library-book__controls select,
 .library-book__controls input {
   width: 100%;

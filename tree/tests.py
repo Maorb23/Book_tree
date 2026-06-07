@@ -13,7 +13,7 @@ import json
 
 from .email_backends import ResendEmailBackend
 from .models import (
-    FriendRequest, Friendship, CommunityPost, Node, ImportedBook,
+    FriendRequest, Friendship, CommunityPost, Node, ImportedBook, BookReview,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
 from .views import (
@@ -411,6 +411,66 @@ class GoodreadsImportTests(TestCase):
         version = TreeVersion.objects.get(user=self.user, tree=tree)
         self.assertEqual(version.comment, 'Added the first science fiction branch.')
         self.assertEqual(response.json()['comment'], 'Added the first science fiction branch.')
+
+    def test_save_tree_version_can_create_community_tree_update(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+
+        response = self.client.post(
+            reverse('tree:api-tree-version-create'),
+            data=json.dumps({
+                'tree_id': tree.id,
+                'comment': 'Added a Hemingway branch.',
+                'visibility': Tree.VISIBILITY_FRIENDS,
+                'post_to_community': True,
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        tree.refresh_from_db()
+        self.assertEqual(tree.visibility, Tree.VISIBILITY_FRIENDS)
+        post = CommunityPost.objects.get(user=self.user, tree=tree)
+        self.assertEqual(post.content, 'Added a Hemingway branch.')
+        self.assertEqual(post.visibility, CommunityPost.VISIBILITY_FRIENDS)
+
+    def test_book_review_api_creates_review_for_tree_node(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        node = Node.objects.create(user=self.user, tree=tree, title='Dune', author='Frank Herbert', node_type='book')
+
+        response = self.client.post(
+            reverse('tree:api-book-reviews'),
+            data=json.dumps({
+                'node': str(node.id),
+                'title': 'Dune',
+                'author': 'Frank Herbert',
+                'review': 'Still enormous and strange.',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(BookReview.objects.get(user=self.user, node=node).review, 'Still enormous and strange.')
+
+    def test_friends_can_view_friend_visible_shared_tree(self):
+        friend = User.objects.create_user(username='friend', password='pass1234')
+        Friendship.objects.create(user_a=self.user, user_b=friend)
+        tree = Tree.objects.create(user=self.user, name='Friend Tree', visibility=Tree.VISIBILITY_FRIENDS)
+        Node.objects.create(user=self.user, tree=tree, title='Dune', node_type='book')
+        self.client.force_login(friend)
+
+        response = self.client.get(reverse('tree:api-shared-tree', args=[self.user.username, tree.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['tree']['id'], tree.id)
+
+    def test_non_friends_cannot_view_friend_visible_shared_tree(self):
+        stranger = User.objects.create_user(username='stranger', password='pass1234')
+        tree = Tree.objects.create(user=self.user, name='Friend Tree', visibility=Tree.VISIBILITY_FRIENDS)
+        self.client.force_login(stranger)
+
+        response = self.client.get(reverse('tree:api-shared-tree', args=[self.user.username, tree.id]))
+
+        self.assertEqual(response.status_code, 403)
 
     def test_delete_tree_can_delete_default_and_promote_next_tree(self):
         main_tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)

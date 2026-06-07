@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q
-from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, Tree, TreeVersion
+from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, Tree, TreeVersion, BookReview
 
 
 class TreeSerializer(serializers.ModelSerializer):
@@ -8,7 +8,7 @@ class TreeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tree
-        fields = ['id', 'name', 'description', 'is_default', 'created_at', 'updated_at', 'node_count']
+        fields = ['id', 'name', 'description', 'visibility', 'is_default', 'created_at', 'updated_at', 'node_count']
 
     def get_node_count(self, obj):
         if hasattr(obj, 'node_count'):
@@ -118,6 +118,15 @@ class TreeVersionSerializer(serializers.ModelSerializer):
         return len((obj.snapshot or {}).get('edges') or [])
 
 
+class BookReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookReview
+        fields = [
+            'id', 'node', 'imported_book', 'title', 'author', 'isbn', 'cover_image',
+            'rating', 'review', 'created_at', 'updated_at',
+        ]
+
+
 class TreeDataSerializer(serializers.Serializer):
     """Full tree payload for the frontend."""
     nodes = NodeSerializer(many=True)
@@ -173,11 +182,17 @@ class FriendshipSerializer(serializers.ModelSerializer):
 
 class CommunityPostSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
+    tree_url = serializers.SerializerMethodField()
 
     class Meta:
         model = CommunityPost
         fields = [
-            'id', 'user', 'username', 'title', 'content',
+            'id', 'user', 'username', 'title', 'content', 'tree', 'tree_version', 'tree_url',
             'progress_status', 'visibility', 'created_at', 'updated_at',
         ]
+
+    def get_tree_url(self, obj):
+        if not obj.tree_id:
+            return ''
+        return f"/users/{obj.user.username}/trees/{obj.tree_id}/"
         read_only_fields = ['created_at', 'updated_at']

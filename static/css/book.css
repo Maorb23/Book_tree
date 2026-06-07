@@ -183,6 +183,26 @@ body {
   gap: 12px;
 }
 
+.book-review-box {
+  margin-top: 18px;
+  border: 1px solid rgba(157, 204, 122, 0.28);
+  border-radius: 14px;
+  background: rgba(10, 15, 11, 0.62);
+  padding: 14px 16px;
+}
+
+.book-review-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #d4f0b9;
+}
+
+.book-review-box p {
+  color: var(--book-text);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+
 .book-details {
   margin-top: 28px;
   display: grid;

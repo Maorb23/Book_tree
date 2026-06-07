@@ -38,10 +38,10 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import (
-    Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook,
+    Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, BookReview,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog,
 )
-from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer
+from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer, BookReviewSerializer
 from .forms import EmailUserCreationForm
 
 
@@ -79,6 +79,23 @@ def tree_page(request):
     return render(request, 'tree.html', {
         'trees': trees,
         'current_tree': current_tree,
+        'tree_owner': request.user,
+        'is_readonly_tree': False,
+    })
+
+
+@login_required
+def shared_tree_page(request, username, tree_id):
+    owner = get_object_or_404(User, username=username)
+    tree = get_object_or_404(Tree, pk=tree_id, user=owner)
+    if not _can_view_tree(request.user, tree):
+        return redirect('tree:community-feed')
+    return render(request, 'tree.html', {
+        'trees': [tree],
+        'current_tree': tree,
+        'tree_owner': owner,
+        'is_readonly_tree': owner.id != request.user.id,
+        'shared_tree_api_url': reverse('tree:api-shared-tree', args=[owner.username, tree.id]),
     })
 
 
@@ -91,6 +108,10 @@ def my_books(request):
         _get_library_books(request.user),
         key=lambda book: (book.title or '').lower(),
     )
+    reviews = _reviews_by_book_identity(request.user)
+    reviewed_books = BookReview.objects.filter(user=request.user).order_by('-updated_at')
+    for book in books:
+        setattr(book, 'user_review', _review_for_book_from_map(reviews, book))
     shelf_counter = Counter(book.shelf for book in books)
     shelf_counts = {
         'all': len(books),
@@ -112,6 +133,8 @@ def my_books(request):
         'custom_shelves': custom_shelves,
         'trees': trees,
         'current_tree': current_tree,
+        'reviews': reviews,
+        'reviewed_books': reviewed_books,
     })
 
 
@@ -355,6 +378,24 @@ def _get_friend_ids(user):
     for user_a_id, user_b_id in pairs:
         friend_ids.add(user_b_id if user_a_id == user.id else user_a_id)
     return friend_ids
+
+
+def _are_friends(user, other_user):
+    if not user.is_authenticated or user.id == other_user.id:
+        return user.is_authenticated
+    return Friendship.objects.filter(
+        Q(user_a=user, user_b=other_user) | Q(user_a=other_user, user_b=user)
+    ).exists()
+
+
+def _can_view_tree(user, tree):
+    if user.is_authenticated and tree.user_id == user.id:
+        return True
+    if tree.visibility == Tree.VISIBILITY_PUBLIC:
+        return True
+    if tree.visibility == Tree.VISIBILITY_FRIENDS:
+        return _are_friends(user, tree.user)
+    return False
 
 
 def _get_display_name(user):
@@ -698,6 +739,33 @@ def tree_data(request):
 # Node CRUD
 # ──────────────────────────────────────────────
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def shared_tree_data(request, username, tree_id):
+    owner = get_object_or_404(User, username=username)
+    tree = get_object_or_404(Tree, pk=tree_id, user=owner)
+    if not _can_view_tree(request.user, tree):
+        return Response({'detail': 'You do not have access to this tree.'}, status=status.HTTP_403_FORBIDDEN)
+
+    nodes = Node.objects.filter(user=owner, tree=tree).annotate(children_count=Count('children'))
+    edges = Edge.objects.select_related('source', 'target').filter(user=owner, tree=tree)
+    node_data = NodeSerializer(nodes, many=True, context={'request': request}).data
+    edge_data = []
+    for node in nodes:
+        if node.parent_id:
+            edge_data.append({
+                'id': f"parent-{node.id}",
+                'source': str(node.parent_id),
+                'target': str(node.id),
+                'edge_type': 'progression',
+                'label': '',
+                'style': {},
+            })
+    for edge in edges:
+        edge_data.append(EdgeSerializer(edge).data)
+    return Response({'tree': TreeSerializer(tree).data, 'nodes': node_data, 'edges': edge_data})
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def node_list(request):
@@ -827,10 +895,95 @@ def edge_detail(request, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def book_review_list_create(request):
+    if request.method == 'GET':
+        reviews = _review_queryset_for_request(request)
+        return Response(BookReviewSerializer(reviews, many=True).data)
+
+    title = (request.data.get('title') or '').strip()[:255]
+    author = (request.data.get('author') or '').strip()[:255]
+    isbn = _normalize_goodreads_isbn(request.data.get('isbn'))[:20]
+    review_text = (request.data.get('review') or '').strip()
+    if not title:
+        return Response({'detail': 'Book title is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not review_text:
+        return Response({'detail': 'Review is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    node = _optional_user_node(request.user, request.data.get('node'))
+    imported_book = _optional_imported_book(request.user, request.data.get('imported_book'))
+    rating = _safe_float(request.data.get('rating'))
+    lookup = _review_lookup(request.user, title, author, isbn, node, imported_book)
+    defaults = {
+        'node': node,
+        'imported_book': imported_book,
+        'title': title,
+        'author': author,
+        'isbn': isbn,
+        'cover_image': (request.data.get('cover_image') or '').strip()[:1000],
+        'rating': rating,
+        'review': review_text,
+    }
+    review, _ = BookReview.objects.update_or_create(defaults=defaults, **lookup)
+    return Response(BookReviewSerializer(review).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def book_review_detail(request, review_id):
+    review = get_object_or_404(BookReview, pk=review_id, user=request.user)
+    review.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 def _invalidate_tree_cache(user_id, tree_id=None):
     if tree_id:
         cache.delete(f'tree-data:v2:user:{user_id}:tree:{tree_id}')
     cache.delete(f'tree-data:v1:user:{user_id}')
+
+
+def _optional_user_node(user, node_id):
+    if not node_id:
+        return None
+    return get_object_or_404(Node.objects.filter(user=user), pk=node_id)
+
+
+def _optional_imported_book(user, book_id):
+    if not book_id:
+        return None
+    return get_object_or_404(ImportedBook.objects.filter(user=user), pk=book_id)
+
+
+def _review_lookup(user, title, author, isbn, node=None, imported_book=None):
+    if node:
+        return {'user': user, 'node': node}
+    if imported_book:
+        return {'user': user, 'imported_book': imported_book}
+    if isbn:
+        return {'user': user, 'isbn': isbn}
+    return {'user': user, 'title': title, 'author': author}
+
+
+def _review_queryset_for_request(request):
+    reviews = BookReview.objects.filter(user=request.user)
+    node_id = request.query_params.get('node')
+    imported_id = request.query_params.get('imported_book')
+    isbn = _normalize_goodreads_isbn(request.query_params.get('isbn'))
+    title = (request.query_params.get('title') or '').strip()
+    author = (request.query_params.get('author') or '').strip()
+    if node_id:
+        return reviews.filter(node_id=node_id)
+    if imported_id:
+        return reviews.filter(imported_book_id=imported_id)
+    if isbn:
+        return reviews.filter(isbn=isbn)
+    if title:
+        reviews = reviews.filter(title__iexact=title)
+        if author:
+            reviews = reviews.filter(author__iexact=author)
+        return reviews
+    return reviews
 
 
 @api_view(['GET', 'POST'])
@@ -940,9 +1093,27 @@ def tree_version_create(request):
     tree = _get_tree_from_request(request)
     label = (request.data.get('label') or '').strip()[:180]
     comment = (request.data.get('comment') or '').strip()[:2000]
+    visibility = (request.data.get('visibility') or tree.visibility or Tree.VISIBILITY_PRIVATE).strip()
+    post_to_community = bool(request.data.get('post_to_community'))
     if not label:
         label = 'Saved tree version'
+    valid_visibilities = {value for value, _ in Tree.VISIBILITY_CHOICES}
+    if visibility not in valid_visibilities:
+        return Response({'detail': 'Choose a valid tree visibility.'}, status=status.HTTP_400_BAD_REQUEST)
+    if tree.visibility != visibility:
+        tree.visibility = visibility
+        tree.save(update_fields=['visibility', 'updated_at'])
     version = _create_tree_version(request.user, tree, label, 'manual_save', comment=comment)
+    if post_to_community and comment:
+        CommunityPost.objects.create(
+            user=request.user,
+            tree=tree,
+            tree_version=version,
+            title=f'Updated tree: {tree.name}',
+            content=comment,
+            progress_status=CommunityPost.STATUS_READING,
+            visibility=visibility if visibility != Tree.VISIBILITY_PRIVATE else CommunityPost.VISIBILITY_PRIVATE,
+        )
     return Response(TreeVersionSerializer(version).data, status=status.HTTP_201_CREATED)
 
 
@@ -1244,6 +1415,27 @@ def _get_library_books(user):
     )
     tree_books = [book for book in tree_books if not _is_library_shadow(book)]
     return _dedupe_library_books(imported_books + tree_books)
+
+
+def _reviews_by_book_identity(user):
+    reviews = {}
+    for review in BookReview.objects.filter(user=user).order_by('-updated_at'):
+        keys = [
+            review.isbn and f'isbn:{review.isbn}',
+            f'title:{_normalize_text(review.title)}:{_normalize_text(review.author)}',
+        ]
+        for key in keys:
+            if key and key not in reviews:
+                reviews[key] = review
+    return reviews
+
+
+def _review_for_book_from_map(reviews, book):
+    isbn = _normalize_goodreads_isbn(getattr(book, 'isbn', ''))
+    if isbn and f'isbn:{isbn}' in reviews:
+        return reviews[f'isbn:{isbn}']
+    key = f"title:{_normalize_text(getattr(book, 'title', ''))}:{_normalize_text(getattr(book, 'author', ''))}"
+    return reviews.get(key)
 
 
 def _is_library_shadow(book):

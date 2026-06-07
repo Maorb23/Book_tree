@@ -367,6 +367,13 @@
       border-radius: 8px; font-size: 0.85rem; cursor: pointer; transition: all var(--transition); color: var(--text-light);
     }
     .sidebar-child:hover { border-color: var(--accent); color: var(--accent); }
+    .sidebar-review { margin: 14px 0; }
+    .sidebar-review__card {
+      border: 1px solid rgba(242, 197, 114, 0.28); border-radius: 12px;
+      padding: 12px; background: rgba(12, 16, 12, 0.82); display: grid; gap: 8px;
+    }
+    .sidebar-review__card strong { color: var(--accent); letter-spacing: 0.08em; }
+    .sidebar-review__card p { color: var(--text-light); line-height: 1.5; margin: 0; }
     .sidebar-child--connection { cursor: default; color: var(--text-light); display: flex; flex-direction: column; gap: 8px; }
     .sidebar-child--connection:hover { border-color: var(--border); color: var(--text-light); }
     .connection-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -500,19 +507,24 @@
     </div>
     <div class="nav__links">
       <span class="nav__user">{{ request.user.username }}</span>
-      <select class="tree-switcher" id="treeSwitcher" aria-label="Current tree">
+      {% if is_readonly_tree %}<span class="nav__user">Viewing {{ tree_owner.username }}'s tree</span>{% endif %}
+      <select class="tree-switcher" id="treeSwitcher" aria-label="Current tree" {% if is_readonly_tree %}disabled{% endif %}>
         {% for tree in trees %}
           <option value="{{ tree.id }}" {% if tree.id == current_tree.id %}selected{% endif %}>{{ tree.name }}</option>
         {% endfor %}
       </select>
+      {% if not is_readonly_tree %}
       <button class="btn btn--danger tree-delete-btn" id="deleteTreeBtn" type="button">Delete Tree</button>
       <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
+      {% endif %}
       <a href="{% url 'tree:challenges' %}" class="btn btn--ghost">Challenges</a>
       <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
       <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
+      {% if not is_readonly_tree %}
       <button class="btn btn--ghost" id="treeVersionsBtn" type="button">Versions</button>
       <button class="btn btn--ghost" id="saveTreeBtn" type="button">Save Tree</button>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
+      {% endif %}
     </div>
   </nav>
 
@@ -771,6 +783,8 @@
     const NODE_IMG_H = 200;
     const H_SEP = 260;
     const V_SEP = 360;
+    const TREE_READONLY = {{ is_readonly_tree|yesno:"true,false" }};
+    const TREE_DATA_URL = {% if shared_tree_api_url %}'{{ shared_tree_api_url }}'{% else %}null{% endif %};
     const SHELF_LABELS = {
       want_to_read: 'Want to Read',
       currently_reading: 'Currently Reading',
@@ -888,10 +902,12 @@
 
     async function saveTreeVersion(comment = '') {
       const label = `Saved tree - ${new Date().toLocaleString()}`;
+      const visibility = document.getElementById('saveTreeVisibility')?.value || '{{ current_tree.visibility|default:"private" }}';
+      const postToCommunity = Boolean(document.getElementById('saveTreePostCommunity')?.checked);
       const res = await fetch(treeApiUrl('/api/tree/versions/save/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
-        body: JSON.stringify({ label, comment }),
+        body: JSON.stringify({ label, comment, visibility, post_to_community: postToCommunity }),
       });
       if (!res.ok) throw new Error('Could not save tree version');
       treeBaselineSnapshot = currentTreeSnapshot();
@@ -918,6 +934,12 @@
               <div class="app-confirm__body">
                 Add an optional comment for this saved version.
                 <textarea id="saveVersionComment" maxlength="2000" placeholder="What changed in this tree?"></textarea>
+                <select id="saveTreeVisibility" class="sidebar-select" style="margin-top:12px;">
+                  <option value="private" {% if current_tree.visibility == "private" %}selected{% endif %}>Private</option>
+                  <option value="friends" {% if current_tree.visibility == "friends" %}selected{% endif %}>Friends</option>
+                  <option value="public" {% if current_tree.visibility == "public" %}selected{% endif %}>Public</option>
+                </select>
+                <label class="app-confirm__hint"><input id="saveTreePostCommunity" type="checkbox"> Post this update to the community feed</label>
                 <span class="app-confirm__hint">Leave it empty to save without a comment.</span>
               </div>
               <div class="app-confirm__footer">
@@ -981,6 +1003,12 @@
               <div class="app-confirm__body">
                 Your tree has changes that have not been saved as a version.
                 <textarea id="navigationSaveComment" maxlength="2000" placeholder="Optional comment if you save before leaving"></textarea>
+                <select id="saveTreeVisibility" class="sidebar-select" style="margin-top:12px;">
+                  <option value="private" {% if current_tree.visibility == "private" %}selected{% endif %}>Private</option>
+                  <option value="friends" {% if current_tree.visibility == "friends" %}selected{% endif %}>Friends</option>
+                  <option value="public" {% if current_tree.visibility == "public" %}selected{% endif %}>Public</option>
+                </select>
+                <label class="app-confirm__hint"><input id="saveTreePostCommunity" type="checkbox"> Post this update to the community feed</label>
               </div>
               <div class="app-confirm__footer">
                 <button type="button" class="btn btn--ghost" data-role="cancel">Cancel</button>
@@ -1144,6 +1172,81 @@
 
     window.confirmAction = confirmAction;
 
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[ch]));
+    }
+
+    async function saveBookReview(payload) {
+      const res = await fetch('/api/book-reviews/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Could not save review.');
+      return data;
+    }
+
+    function renderSidebarReview(node, review) {
+      const host = document.getElementById(`nodeReview_${node.id}`);
+      if (!host) return;
+      if (!review) {
+        host.innerHTML = '<button class="btn btn--ghost" type="button">Add a Review</button>';
+        host.querySelector('button')?.addEventListener('click', () => openReviewPrompt(node));
+        return;
+      }
+      host.innerHTML = `
+        <div class="sidebar-review__card">
+          ${review.rating ? `<strong>${'★'.repeat(Math.round(Number(review.rating)))}</strong>` : ''}
+          <p>${escapeHtml(review.review)}</p>
+          <button class="btn btn--ghost btn--sm" type="button">Edit Review</button>
+        </div>
+      `;
+      host.querySelector('button')?.addEventListener('click', () => openReviewPrompt(node, review));
+    }
+
+    async function loadNodeReview(node) {
+      try {
+        const res = await fetch(`/api/book-reviews/?node=${encodeURIComponent(node.id)}`);
+        const data = await res.json();
+        renderSidebarReview(node, (data || [])[0] || null);
+      } catch (_) {
+        renderSidebarReview(node, null);
+      }
+    }
+
+    async function openReviewPrompt(book, existing = null) {
+      const text = window.prompt(`Review "${book.title}"`, existing?.review || '');
+      if (text === null) return;
+      const review = text.trim();
+      if (!review) {
+        showToast('Review cannot be empty.', 'error');
+        return;
+      }
+      try {
+        const saved = await saveBookReview({
+          node: book.id,
+          title: book.title || '',
+          author: book.author || '',
+          isbn: book.isbn || '',
+          cover_image: book.cover_url || book.cover_image || '',
+          rating: book.rating || null,
+          review,
+        });
+        renderSidebarReview(book, saved);
+        showToast('Review saved.', 'success');
+      } catch (error) {
+        showToast(error.message || 'Could not save review.', 'error');
+      }
+    }
+    window.openReviewPrompt = openReviewPrompt;
+
     const svg = d3.select('#treeCanvas');
     const backdropLayer = d3.select('#forestBackdrop');
     const stumpLayer = d3.select('#stumpLayer');
@@ -1306,7 +1409,7 @@
     async function loadTree() {
       document.getElementById('loadingOverlay').style.display = 'flex';
       try {
-        const res = await fetch(treeApiUrl('/api/tree/'), {
+        const res = await fetch(TREE_DATA_URL || treeApiUrl('/api/tree/'), {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' },
         });
@@ -2201,6 +2304,24 @@
         </div>
       `;
 
+      if (node.node_type === 'book') {
+        const reviewHost = document.createElement('div');
+        reviewHost.className = 'sidebar-review';
+        reviewHost.innerHTML = `
+          <div class="sidebar-section-title">Your Review</div>
+          <div id="nodeReview_${node.id}">
+            <button class="btn btn--ghost" type="button">Add a Review</button>
+          </div>
+        `;
+        content.insertBefore(reviewHost, content.querySelector('.sidebar-actions'));
+        reviewHost.querySelector('button')?.addEventListener('click', () => openReviewPrompt(node));
+        loadNodeReview(node);
+      }
+
+      if (TREE_READONLY) {
+        content.querySelectorAll('.sidebar-actions, .connection-row-actions, input, select, button').forEach(el => el.remove());
+      }
+
       children.slice(0, 6).forEach(c => {
         const li = content.querySelector(`[onclick="panToNode__${c.id.replace(/-/g,'')}"]`);
         if (li) li.addEventListener('click', () => panToNode(c));
@@ -2860,16 +2981,6 @@
           autocompleteOptions = [];
           hideBookSuggestions();
         }
-      }
-
-      function escapeHtml(value) {
-        return String(value || '').replace(/[&<>"']/g, ch => ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;',
-        }[ch]));
       }
 
       function hideBookSuggestions() {

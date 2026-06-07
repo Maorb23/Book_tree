@@ -29,6 +29,9 @@
           <div>
             <h3 class="post-title">{{ post.title }}</h3>
             <p class="post-content">{{ post.content }}</p>
+            {% if post.tree %}
+              <a class="btn btn--ghost btn--sm" href="{% url 'tree:shared-tree' post.user.username post.tree.id %}">View Tree</a>
+            {% endif %}
           </div>
           <div class="post-footer">
             <div>

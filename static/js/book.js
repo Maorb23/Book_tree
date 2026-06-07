@@ -31,6 +31,10 @@
   const descEl = document.getElementById('bookDescription');
   const metaList = document.getElementById('bookMetaList');
   const searchLink = document.getElementById('bookSearchLink');
+  const addReviewBtn = document.getElementById('addBookReview');
+  const reviewBox = document.getElementById('bookReviewBox');
+  let currentInfo = null;
+  let currentReview = null;
 
   function setSearchLink(q) {
     const encoded = encodeURIComponent(q || 'books');
@@ -74,6 +78,82 @@
       metaList.appendChild(li);
     });
   }
+
+  function renderReview(review) {
+    currentReview = review || null;
+    if (!reviewBox) return;
+    if (!review) {
+      reviewBox.hidden = true;
+      if (addReviewBtn) addReviewBtn.textContent = 'Add a Review';
+      return;
+    }
+    reviewBox.hidden = false;
+    reviewBox.innerHTML = `
+      <strong>Your Review${review.rating ? ` · ${'★'.repeat(Math.round(Number(review.rating)))}` : ''}</strong>
+      <p>${escapeHtml(review.review)}</p>
+      <button class="btn btn--ghost btn--sm" type="button" id="editBookReview">Edit Review</button>
+    `;
+    if (addReviewBtn) addReviewBtn.textContent = 'Edit Review';
+    document.getElementById('editBookReview')?.addEventListener('click', openReviewPrompt);
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  async function loadReview(info) {
+    if (!reviewBox) return;
+    const params = new URLSearchParams();
+    if (info.isbn) params.set('isbn', info.isbn);
+    params.set('title', info.title || titleSeed || '');
+    params.set('author', info.author || authorSeed || '');
+    try {
+      const res = await fetch(`/api/book-reviews/?${params.toString()}`);
+      const data = await res.json();
+      renderReview((data || [])[0] || null);
+    } catch (_) {
+      renderReview(null);
+    }
+  }
+
+  async function openReviewPrompt() {
+    const info = currentInfo || {
+      title: titleSeed,
+      author: authorSeed,
+      isbn: isbnSeed,
+      cover_url: coverSeed,
+    };
+    const text = window.prompt(`Review "${info.title || 'this book'}"`, currentReview?.review || '');
+    if (text === null) return;
+    const review = text.trim();
+    if (!review) return;
+    const res = await fetch('/api/book-reviews/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      body: JSON.stringify({
+        title: info.title || titleSeed || '',
+        author: info.author || authorSeed || '',
+        isbn: info.isbn || isbnSeed || '',
+        cover_image: info.cover_url || coverSeed || '',
+        review,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) renderReview(data);
+  }
+
+  function getCsrf() {
+    const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+    return cookie ? cookie.split('=')[1] : '';
+  }
+
+  addReviewBtn?.addEventListener('click', openReviewPrompt);
 
   async function loadBook() {
     if (!query) {
@@ -119,6 +199,7 @@
         description: result.description || descriptionSeed || 'No description available.',
         cover_url: result.cover_url || coverSeed || '',
       };
+      currentInfo = info;
 
       titleEl.textContent = info.title;
       authorEl.textContent = info.author;
@@ -127,6 +208,7 @@
       setInfoChips(info);
       setMetaList(info);
       setSearchLink(`${info.title} ${info.author}`);
+      loadReview(info);
     } catch (err) {
       titleEl.textContent = titleSeed || 'Book details';
       authorEl.textContent = authorSeed || 'Search unavailable';
@@ -134,6 +216,7 @@
       setCover('');
       setInfoChips({});
       setMetaList({});
+      loadReview({ title: titleSeed, author: authorSeed, isbn: isbnSeed, cover_url: coverSeed });
     }
   }
 

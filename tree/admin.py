@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Node, Edge, UserProfile, FriendRequest, Friendship, CommunityPost,
-    ReadingChallenge, DailyPageLog,
+    ReadingChallenge, DailyPageLog, BookReview,
 )
 
 
@@ -43,6 +43,12 @@ class CommunityPostAdmin(admin.ModelAdmin):
     list_display = ('title', 'user', 'visibility', 'created_at')
     list_filter = ('visibility', 'progress_status')
     search_fields = ('title', 'user__username')
+
+
+@admin.register(BookReview)
+class BookReviewAdmin(admin.ModelAdmin):
+    list_display = ('title', 'user', 'rating', 'updated_at')
+    search_fields = ('title', 'author', 'user__username', 'review')
 
 
 @admin.register(ReadingChallenge)

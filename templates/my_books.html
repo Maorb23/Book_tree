@@ -34,6 +34,7 @@
       <button class="shelf-tab" data-filter="currently_reading">Currently Reading <span>{{ shelf_counts.currently_reading }}</span></button>
       <button class="shelf-tab" data-filter="read">Read <span>{{ shelf_counts.read }}</span></button>
       <button class="shelf-tab" data-filter="did_not_finish">Did Not Finish <span>{{ shelf_counts.did_not_finish }}</span></button>
+      <button class="shelf-tab" data-filter="reviewed">My Reviewed Books <span>{{ reviewed_books|length }}</span></button>
     </div>
 
     <div class="custom-shelves">
@@ -162,7 +163,7 @@
 
     <div class="book-grid" id="bookGrid">
       {% for book in books %}
-      <article class="library-book" data-id="{{ book.id }}" data-source="{{ book.library_source }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}" data-genre="{{ book.genre|lower }}" data-shelf="{{ book.shelf }}" data-custom="{{ book.custom_shelf|lower }}" data-custom-label="{{ book.custom_shelf|escape }}">
+      <article class="library-book" data-id="{{ book.id }}" data-source="{{ book.library_source }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}" data-isbn="{{ book.isbn }}" data-cover="{{ book.get_cover_url|default:'' }}" data-genre="{{ book.genre|lower }}" data-shelf="{{ book.shelf }}" data-custom="{{ book.custom_shelf|lower }}" data-custom-label="{{ book.custom_shelf|escape }}" data-reviewed="{% if book.user_review %}1{% else %}0{% endif %}">
         <a class="library-book__cover" href="{% url 'tree:book' %}?title={{ book.title|urlencode }}{% if book.author %}&author={{ book.author|urlencode }}{% endif %}{% if book.isbn %}&isbn={{ book.isbn|urlencode }}{% endif %}{% if book.genre %}&genre={{ book.genre|urlencode }}{% endif %}{% if book.year %}&year={{ book.year|urlencode }}{% endif %}{% if book.cover_image %}&cover={{ book.cover_image|urlencode }}{% endif %}">
           {% if book.get_cover_url %}
             <img src="{{ book.get_cover_url }}" alt="{{ book.title }} cover" loading="lazy">
@@ -188,6 +189,7 @@
             </select>
             <input class="custom-shelf-input" type="text" value="{{ book.custom_shelf }}" placeholder="Custom shelf">
             <button class="btn btn--ghost btn--sm save-book-shelf">Save</button>
+            <button class="btn btn--ghost btn--sm add-book-review" type="button">{% if book.user_review %}Edit Review{% else %}Add Review{% endif %}</button>
             <div class="reading-update" {% if book.shelf != "currently_reading" %}hidden{% endif %}>
               <input class="reading-pages-input" type="number" min="1" max="5000" placeholder="Pages today" aria-label="Pages read for {{ book.title }}">
               <input class="reading-date-input" type="date" aria-label="Reading date for {{ book.title }}">
@@ -215,6 +217,33 @@
       </div>
       {% endfor %}
     </div>
+
+    <section class="reviewed-books" id="reviewedBooks">
+      <div class="reviewed-books__head">
+        <p class="section-kicker">My Reviewed Books</p>
+        <h2>Your notes and reviews</h2>
+      </div>
+      {% for review in reviewed_books %}
+        <article class="review-card">
+          <div class="review-card__cover">
+            {% if review.cover_image %}<img src="{{ review.cover_image }}" alt="{{ review.title }} cover" loading="lazy">{% else %}<span>{{ review.title|slice:":1" }}</span>{% endif %}
+          </div>
+          <div class="review-card__body">
+            <h3>{{ review.title }}</h3>
+            <p class="review-card__meta">{{ review.author|default:"Unknown author" }}{% if review.rating %} · {{ review.rating }}/5{% endif %}</p>
+            <p class="review-card__text {% if review.review|length > 260 %}is-collapsed{% endif %}">{{ review.review }}</p>
+            {% if review.review|length > 260 %}
+              <button class="btn btn--ghost btn--sm read-review-more" type="button">Read more</button>
+            {% endif %}
+          </div>
+        </article>
+      {% empty %}
+        <div class="empty-library">
+          <h2>No reviews yet</h2>
+          <p>Add a review from a book card, book page, or tree node sidebar.</p>
+        </div>
+      {% endfor %}
+    </section>
   </section>
 </main>
 

@@ -6,9 +6,19 @@ import uuid
 
 
 class Tree(models.Model):
+    VISIBILITY_PRIVATE = 'private'
+    VISIBILITY_FRIENDS = 'friends'
+    VISIBILITY_PUBLIC = 'public'
+    VISIBILITY_CHOICES = [
+        (VISIBILITY_PRIVATE, 'Private'),
+        (VISIBILITY_FRIENDS, 'Friends'),
+        (VISIBILITY_PUBLIC, 'Public'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='trees')
     name = models.CharField(max_length=160)
     description = models.CharField(max_length=280, blank=True)
+    visibility = models.CharField(max_length=12, choices=VISIBILITY_CHOICES, default=VISIBILITY_PRIVATE)
     is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -175,6 +185,31 @@ class TreeVersion(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.label}"
+
+
+class BookReview(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='book_reviews')
+    node = models.ForeignKey(Node, null=True, blank=True, on_delete=models.CASCADE, related_name='reviews')
+    imported_book = models.ForeignKey(ImportedBook, null=True, blank=True, on_delete=models.CASCADE, related_name='reviews')
+    title = models.CharField(max_length=255)
+    author = models.CharField(max_length=255, blank=True)
+    isbn = models.CharField(max_length=20, blank=True)
+    cover_image = models.URLField(max_length=1000, blank=True)
+    rating = models.FloatField(null=True, blank=True)
+    review = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        indexes = [
+            models.Index(fields=['user', 'updated_at'], name='book_review_user_date_idx'),
+            models.Index(fields=['user', 'isbn'], name='book_review_user_isbn_idx'),
+            models.Index(fields=['user', 'title', 'author'], name='book_review_user_book_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
 
 
 class ReadingChallenge(models.Model):
@@ -365,6 +400,8 @@ class CommunityPost(models.Model):
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='community_posts')
+    tree = models.ForeignKey(Tree, null=True, blank=True, on_delete=models.SET_NULL, related_name='community_posts')
+    tree_version = models.ForeignKey(TreeVersion, null=True, blank=True, on_delete=models.SET_NULL, related_name='community_posts')
     title = models.CharField(max_length=160)
     content = models.TextField()
     progress_status = models.CharField(max_length=12, choices=STATUS_CHOICES, blank=True)

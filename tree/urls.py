@@ -22,12 +22,14 @@ urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('tree/', views.tree_page, name='tree'),
+    path('users/<str:username>/trees/<int:tree_id>/', views.shared_tree_page, name='shared-tree'),
     path('my-books/', views.my_books, name='my-books'),
     path('challenges/', views.challenges, name='challenges'),
     path('book/', views.book_page, name='book'),
 
     # API
     path('api/tree/', views.tree_data, name='api-tree'),
+    path('api/shared-tree/<str:username>/<int:tree_id>/', views.shared_tree_data, name='api-shared-tree'),
     path('api/trees/', views.tree_list, name='api-tree-list'),
     path('api/trees/<int:tree_id>/', views.tree_detail, name='api-tree-detail'),
     path('api/tree/versions/', views.tree_version_list, name='api-tree-versions'),
@@ -38,6 +40,8 @@ urlpatterns = [
     path('api/nodes/', views.node_list, name='api-node-list'),
     path('api/nodes/<str:pk>/', views.node_detail, name='api-node-detail'),
     path('api/my-books/', views.library_book_create, name='api-my-books-create'),
+    path('api/book-reviews/', views.book_review_list_create, name='api-book-reviews'),
+    path('api/book-reviews/<int:review_id>/', views.book_review_detail, name='api-book-review-detail'),
     path('api/my-books/recommendations/', views.my_books_recommendations, name='api-my-books-recommendations'),
     path('api/imported-books/<int:pk>/', views.imported_book_detail, name='api-imported-book-detail'),
     path('api/imported-books/<int:pk>/add-to-tree/', views.imported_book_add_to_tree, name='api-imported-book-add-to-tree'),
