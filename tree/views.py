@@ -2803,31 +2803,44 @@ def _search_authors_open_library(query, max_results=8, timeout=3.5):
 
 
 def _search_nytimes_book_reviews(title='', author='', isbn=''):
-    query_parts = []
-    if title:
-        query_parts.append(f'"{title}"')
-    if author:
-        query_parts.append(f'"{author}"')
-    if isbn:
-        query_parts.append(isbn)
-    if not query_parts:
+    if not title and not author:
         return []
 
-    params = {
-        'api-key': settings.NYTIMES_ARTICLE_SEARCH_API_KEY,
-        'q': ' '.join(query_parts),
-        'fq': 'section_name:("Books" "Book Review" "Arts")',
-        'sort': 'relevance',
-        'page': 0,
-    }
-    resp = requests.get(
-        'https://api.nytimes.com/svc/search/v2/articlesearch.json',
-        params=params,
-        headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
-        timeout=3.5,
-    )
-    resp.raise_for_status()
-    rows = ((resp.json().get('response') or {}).get('docs') or [])
+    queries = []
+    if title and author:
+        queries.append({
+            'q': f'"{title}" "{author}"',
+            'fq': 'typeOfMaterials:Review AND section.name:Books',
+        })
+    if title:
+        queries.append({
+            'q': f'"{title}"',
+            'fq': 'typeOfMaterials:Review AND section.name:Books',
+        })
+    if title and author:
+        queries.append({
+            'q': f'"{title}" "{author}" book review',
+            'fq': 'section.name:Books',
+        })
+
+    rows = []
+    for query_params in queries:
+        params = {
+            'api-key': settings.NYTIMES_ARTICLE_SEARCH_API_KEY,
+            'sort': 'relevance',
+            'page': 0,
+            **query_params,
+        }
+        resp = requests.get(
+            'https://api.nytimes.com/svc/search/v2/articlesearch.json',
+            params=params,
+            headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
+            timeout=3.5,
+        )
+        resp.raise_for_status()
+        rows = ((resp.json().get('response') or {}).get('docs') or [])
+        if rows:
+            break
 
     results = []
     for row in rows[:5]:

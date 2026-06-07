@@ -7,7 +7,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from datetime import date, timedelta
 import json
 
@@ -302,13 +302,18 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(mock_get.call_args.kwargs['params']['sort'], 'relevance')
         self.assertIn('"Dune"', mock_get.call_args.kwargs['params']['q'])
         self.assertIn('"Frank Herbert"', mock_get.call_args.kwargs['params']['q'])
+        self.assertEqual(mock_get.call_args.kwargs['params']['fq'], 'typeOfMaterials:Review AND section.name:Books')
         self.assertEqual(mock_get.call_args.args[0], 'https://api.nytimes.com/svc/search/v2/articlesearch.json')
 
     @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='nyt-test-key')
     @patch('tree.views.requests.get')
-    def test_critic_reviews_includes_isbn_in_article_search_query(self, mock_get):
-        mock_get.return_value.raise_for_status.return_value = None
-        mock_get.return_value.json.return_value = {
+    def test_critic_reviews_broadens_search_when_exact_review_query_has_no_results(self, mock_get):
+        empty_response = Mock(status_code=200)
+        empty_response.raise_for_status.return_value = None
+        empty_response.json.return_value = {'response': {'docs': []}}
+        match_response = Mock(status_code=200)
+        match_response.raise_for_status.return_value = None
+        match_response.json.return_value = {
             'response': {
                 'docs': [{
                     'headline': {'main': 'A Desert Epic'},
@@ -316,6 +321,7 @@ class BookSearchMetadataTests(SimpleTestCase):
                 }]
             }
         }
+        mock_get.side_effect = [empty_response, match_response]
 
         response = self.client.get(reverse('tree:api-critic-reviews'), {
             'title': 'Dune',
@@ -325,7 +331,9 @@ class BookSearchMetadataTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['results'][0]['book_title'], 'Dune')
-        self.assertIn('9780441172719', mock_get.call_args.kwargs['params']['q'])
+        self.assertNotIn('9780441172719', mock_get.call_args_list[0].kwargs['params']['q'])
+        self.assertEqual(mock_get.call_args_list[0].kwargs['params']['q'], '"Dune" "Frank Herbert"')
+        self.assertEqual(mock_get.call_args_list[1].kwargs['params']['q'], '"Dune"')
 
     @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='')
     def test_critic_reviews_returns_disclaimer_without_key(self):
