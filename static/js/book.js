@@ -1,4 +1,4 @@
-/* ─── BOOK PAGE JavaScript ─────────────────────────── */
+/* BOOK PAGE JavaScript */
 (function () {
   'use strict';
 
@@ -12,6 +12,7 @@
   const yearSeed = (page.dataset.year || '').trim();
   const coverSeed = (page.dataset.coverUrl || '').trim();
   const descriptionSeed = (page.dataset.description || '').trim();
+  const importedBookSeed = (page.dataset.importedBook || '').trim();
 
   const queryParts = [];
   if (titleSeed) queryParts.push(titleSeed);
@@ -29,25 +30,77 @@
   const coverEl = document.getElementById('bookCover');
   const infoEl = document.getElementById('bookInfo');
   const descEl = document.getElementById('bookDescription');
+  const descToggle = document.getElementById('bookDescriptionToggle');
   const metaList = document.getElementById('bookMetaList');
   const searchLink = document.getElementById('bookSearchLink');
-  const criticReviewsEl = document.getElementById('criticReviews');
+  const guardianArticlesEl = document.getElementById('criticReviews');
+  const communityReviewsEl = document.getElementById('communityReviews');
+  const shelfTagsEl = document.getElementById('bookShelfTags');
   const addReviewBtn = document.getElementById('addBookReview');
   const reviewBox = document.getElementById('bookReviewBox');
+  const reviewForm = document.getElementById('bookReviewForm');
+  const reviewText = document.getElementById('bookReviewText');
+  const reviewFormTitle = document.getElementById('reviewFormTitle');
+  const reviewFormStatus = document.getElementById('reviewFormStatus');
+  const cancelReviewBtn = document.getElementById('cancelBookReview');
+  const ratingButtons = Array.from(document.querySelectorAll('#bookReviewRating button'));
+
   let currentInfo = null;
   let currentReview = null;
+  let selectedRating = 0;
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function getCsrf() {
+    const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
+    return cookie ? cookie.split('=')[1] : '';
+  }
 
   function setSearchLink(q) {
     const encoded = encodeURIComponent(q || 'books');
     searchLink.href = `https://www.google.com/search?tbm=bks&q=${encoded}`;
   }
 
-  function setCover(url) {
+  function setCover(url, info = null) {
     if (!url) {
       coverEl.innerHTML = '<span>No cover available</span>';
+      fetchFallbackCover(info);
       return;
     }
-    coverEl.innerHTML = `<img src="${url}" alt="Book cover">`;
+
+    coverEl.innerHTML = `<img src="${escapeHtml(url)}" alt="Book cover">`;
+    const img = coverEl.querySelector('img');
+    img?.addEventListener('error', () => {
+      coverEl.innerHTML = '<span>No cover available</span>';
+      fetchFallbackCover(info);
+    }, { once: true });
+    if (!importedBookSeed && url.includes('covers.openlibrary.org') && info?.title) {
+      fetchFallbackCover(info);
+    }
+  }
+
+  async function fetchFallbackCover(info) {
+    if (!info || !info.title) return;
+    try {
+      const params = new URLSearchParams({ title: info.title });
+      if (info.author) params.set('author', info.author);
+      if (info.isbn) params.set('isbn', info.isbn);
+      const res = await fetch(`/api/cover/?${params.toString()}`);
+      const data = await res.json();
+      if (data.cover_url) {
+        coverEl.innerHTML = `<img src="${escapeHtml(data.cover_url)}" alt="Book cover">`;
+      }
+    } catch (_) {
+      // Keep the fallback label.
+    }
   }
 
   function setInfoChips(info) {
@@ -86,6 +139,27 @@
     });
   }
 
+  function setDescription(text) {
+    if (!descEl) return;
+    const description = text || 'No description available.';
+    descEl.textContent = description;
+    descEl.classList.add('is-clamped');
+    if (!descToggle) return;
+    const shouldToggle = description.length > 260;
+    descToggle.hidden = !shouldToggle;
+    descToggle.textContent = 'Read more';
+  }
+
+  descToggle?.addEventListener('click', () => {
+    const expanded = !descEl.classList.toggle('is-clamped');
+    descToggle.textContent = expanded ? 'Show less' : 'Read more';
+  });
+
+  function starText(value) {
+    const count = Math.max(0, Math.min(5, Math.round(Number(value) || 0)));
+    return '&#9733;'.repeat(count);
+  }
+
   function renderReview(review) {
     currentReview = review || null;
     if (!reviewBox) return;
@@ -96,27 +170,18 @@
     }
     reviewBox.hidden = false;
     reviewBox.innerHTML = `
-      <strong>Your Review${review.rating ? ` · ${'★'.repeat(Math.round(Number(review.rating)))}` : ''}</strong>
+      <strong>Your Review${review.rating ? ` <span>${starText(review.rating)}</span>` : ''}</strong>
       <p>${escapeHtml(review.review)}</p>
       <button class="btn btn--ghost btn--sm" type="button" id="editBookReview">Edit Review</button>
     `;
     if (addReviewBtn) addReviewBtn.textContent = 'Edit Review';
-    document.getElementById('editBookReview')?.addEventListener('click', openReviewPrompt);
-  }
-
-  function escapeHtml(value) {
-    return String(value || '').replace(/[&<>"']/g, ch => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    }[ch]));
+    document.getElementById('editBookReview')?.addEventListener('click', openReviewForm);
   }
 
   async function loadReview(info) {
     if (!reviewBox) return;
     const params = new URLSearchParams();
+    if (importedBookSeed) params.set('imported_book', importedBookSeed);
     if (info.isbn) params.set('isbn', info.isbn);
     params.set('title', info.title || titleSeed || '');
     params.set('author', info.author || authorSeed || '');
@@ -129,54 +194,152 @@
     }
   }
 
-  function renderCriticReviews(results, detail) {
-    if (!criticReviewsEl) return;
-    if (!results || !results.length) {
-      criticReviewsEl.innerHTML = `<p class="critic-review-empty">${escapeHtml(detail || 'No New York Times article or review matches found for this book yet.')}</p>`;
+  function renderCommunityReviews(reviews) {
+    if (!communityReviewsEl) return;
+    if (!reviews || !reviews.length) {
+      communityReviewsEl.innerHTML = '<p class="community-review-empty">No community reviews... yet. The forest is suspiciously quiet.</p>';
       return;
     }
-    criticReviewsEl.innerHTML = `
-      <div class="critic-review-list">
-        ${results.map(review => `
-          <article class="critic-review">
-            <span>${escapeHtml(review.source || 'Critic review')}${review.published_date ? ` · ${escapeHtml(review.published_date)}` : ''}</span>
-            <strong>${escapeHtml(review.review_title || review.book_title || 'Review')}</strong>
-            ${review.reviewer ? `<span>${escapeHtml(review.reviewer)}</span>` : ''}
-            ${review.summary ? `<p>${escapeHtml(review.summary)}</p>` : ''}
-            <a class="btn btn--ghost btn--sm" href="${escapeHtml(review.url)}" target="_blank" rel="noopener">Read NYTimes match</a>
+    communityReviewsEl.innerHTML = `
+      <div class="community-review-list">
+        ${reviews.map(review => `
+          <article class="community-review">
+            <div>
+              <strong>${escapeHtml(review.username || 'Reader')}</strong>
+              ${review.rating ? `<span>${starText(review.rating)}</span>` : ''}
+            </div>
+            <p>${escapeHtml(review.review)}</p>
           </article>
         `).join('')}
       </div>
     `;
   }
 
-  async function loadCriticReviews(info) {
-    if (!criticReviewsEl) return;
-    criticReviewsEl.textContent = 'Looking for NYTimes article matches...';
+  async function loadCommunityReviews(info) {
+    if (!communityReviewsEl) return;
+    communityReviewsEl.textContent = 'Checking the reading room...';
     const params = new URLSearchParams();
     if (info.title) params.set('title', info.title);
     if (info.author) params.set('author', info.author);
     if (info.isbn) params.set('isbn', info.isbn);
     try {
-      const res = await fetch(`/api/critic-reviews/?${params.toString()}`);
+      const res = await fetch(`/api/book-community-reviews/?${params.toString()}`);
       const data = await res.json();
-      renderCriticReviews(data.results || [], data.detail || '');
+      renderCommunityReviews(data || []);
     } catch (_) {
-      renderCriticReviews([], 'Critic reviews are unavailable right now.');
+      renderCommunityReviews([]);
     }
   }
 
-  async function openReviewPrompt() {
+  function renderShelfTags(shelves) {
+    if (!shelfTagsEl) return;
+    if (!shelves || !shelves.length) {
+      shelfTagsEl.hidden = true;
+      shelfTagsEl.innerHTML = '';
+      return;
+    }
+    shelfTagsEl.hidden = false;
+    shelfTagsEl.innerHTML = shelves.map(shelf => `<span>${escapeHtml(shelf.label)}</span>`).join('');
+  }
+
+  async function loadShelves(info) {
+    if (!shelfTagsEl || !addReviewBtn) return;
+    const params = new URLSearchParams();
+    if (importedBookSeed) params.set('imported_book', importedBookSeed);
+    if (info.title) params.set('title', info.title);
+    if (info.author) params.set('author', info.author);
+    if (info.isbn) params.set('isbn', info.isbn);
+    try {
+      const res = await fetch(`/api/book-shelves/?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      renderShelfTags(data.shelves || []);
+    } catch (_) {
+      renderShelfTags([]);
+    }
+  }
+
+  function renderGuardianArticles(results, detail) {
+    if (!guardianArticlesEl) return;
+    if (!results || !results.length) {
+      guardianArticlesEl.innerHTML = `<p class="critic-review-empty">${escapeHtml(detail || 'No Guardian article matches found for this book yet.')}</p>`;
+      return;
+    }
+    guardianArticlesEl.innerHTML = `
+      <div class="critic-review-list">
+        ${results.map(article => `
+          <article class="critic-review">
+            <span>${escapeHtml(article.source || 'The Guardian')}${article.published_date ? ` &middot; ${escapeHtml(article.published_date)}` : ''}</span>
+            <strong>${escapeHtml(article.review_title || article.book_title || 'Article')}</strong>
+            ${article.reviewer ? `<span>${escapeHtml(article.reviewer)}</span>` : ''}
+            ${article.summary ? `<p>${escapeHtml(article.summary)}</p>` : ''}
+            <a class="btn btn--ghost btn--sm" href="${escapeHtml(article.url)}" target="_blank" rel="noopener">Read Guardian article</a>
+          </article>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function loadGuardianArticles(info) {
+    if (!guardianArticlesEl) return;
+    guardianArticlesEl.textContent = 'Looking for Guardian article matches...';
+    const params = new URLSearchParams();
+    if (info.title) params.set('title', info.title);
+    if (info.author) params.set('author', info.author);
+    try {
+      const res = await fetch(`/api/critic-reviews/?${params.toString()}`);
+      const data = await res.json();
+      renderGuardianArticles(data.results || [], data.detail || '');
+    } catch (_) {
+      renderGuardianArticles([], 'Guardian articles are unavailable right now.');
+    }
+  }
+
+  function setSelectedRating(value) {
+    selectedRating = Number(value || 0);
+    ratingButtons.forEach(button => {
+      const active = Number(button.dataset.rating) <= selectedRating;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-checked', String(Number(button.dataset.rating) === selectedRating));
+    });
+  }
+
+  function openReviewForm() {
     const info = currentInfo || {
       title: titleSeed,
       author: authorSeed,
       isbn: isbnSeed,
       cover_url: coverSeed,
     };
-    const text = window.prompt(`Review "${info.title || 'this book'}"`, currentReview?.review || '');
-    if (text === null) return;
-    const review = text.trim();
-    if (!review) return;
+    if (!reviewForm) return;
+    reviewForm.hidden = false;
+    reviewFormTitle.textContent = `Review "${info.title || 'this book'}"`;
+    reviewText.value = currentReview?.review || '';
+    setSelectedRating(currentReview?.rating || 0);
+    reviewFormStatus.textContent = '';
+    reviewText.focus();
+  }
+
+  function closeReviewForm() {
+    if (!reviewForm) return;
+    reviewForm.hidden = true;
+    reviewFormStatus.textContent = '';
+  }
+
+  async function submitReview(event) {
+    event.preventDefault();
+    const info = currentInfo || {
+      title: titleSeed,
+      author: authorSeed,
+      isbn: isbnSeed,
+      cover_url: coverSeed,
+    };
+    const review = (reviewText?.value || '').trim();
+    if (!review) {
+      reviewFormStatus.textContent = 'Write a few thoughts first.';
+      return;
+    }
+    reviewFormStatus.textContent = 'Saving...';
     const res = await fetch('/api/book-reviews/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
@@ -184,34 +347,46 @@
         title: info.title || titleSeed || '',
         author: info.author || authorSeed || '',
         isbn: info.isbn || isbnSeed || '',
+        imported_book: importedBookSeed || null,
         cover_image: info.cover_url || coverSeed || '',
         review,
+        rating: selectedRating || null,
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok) renderReview(data);
+    if (res.ok) {
+      renderReview(data);
+      closeReviewForm();
+      loadCommunityReviews(info);
+    } else {
+      reviewFormStatus.textContent = data.detail || 'Could not save review.';
+    }
   }
 
-  function getCsrf() {
-    const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
-    return cookie ? cookie.split('=')[1] : '';
-  }
+  addReviewBtn?.addEventListener('click', openReviewForm);
+  cancelReviewBtn?.addEventListener('click', closeReviewForm);
+  reviewForm?.addEventListener('submit', submitReview);
+  ratingButtons.forEach(button => {
+    button.addEventListener('click', () => setSelectedRating(button.dataset.rating));
+  });
 
-  addReviewBtn?.addEventListener('click', openReviewPrompt);
+  if (titleSeed) {
+    loadGuardianArticles({ title: titleSeed, author: authorSeed });
+  }
 
   async function loadBook() {
     if (!query) {
       titleEl.textContent = 'Book details';
       authorEl.textContent = 'Provide a title to search.';
-      descEl.textContent = 'No book query was provided.';
+      setDescription('No book query was provided.');
       setSearchLink('books');
       return;
     }
 
     titleEl.textContent = 'Searching...';
     authorEl.textContent = '';
-    descEl.textContent = 'Looking for this book in the library.';
-    setCover(coverSeed);
+    setDescription('Looking for this book in the library.');
+    setCover(coverSeed, { title: titleSeed, author: authorSeed });
     setInfoChips({ genre: genreSeed, year: yearSeed, isbn: isbnSeed });
     setSearchLink(query);
 
@@ -227,21 +402,21 @@
       if (!result) {
         titleEl.textContent = titleSeed || 'Book not found';
         authorEl.textContent = authorSeed || 'Try a different search.';
-        descEl.textContent = 'We could not find details for this book yet.';
-        setCover('');
+        setDescription('We could not find details for this book yet.');
+        setCover('', { title: titleSeed, author: authorSeed });
         setInfoChips({});
         setMetaList({});
         return;
       }
 
       const info = {
-        title: result.title || titleSeed || 'Untitled',
-        author: result.author || authorSeed || 'Unknown author',
-        genre: result.genre || genreSeed || '',
-        year: result.year || yearSeed || '',
-        isbn: result.isbn || isbnSeed || '',
-        description: result.description || descriptionSeed || 'No description available.',
-        cover_url: result.cover_url || coverSeed || '',
+        title: titleSeed || result.title || 'Untitled',
+        author: authorSeed || result.author || 'Unknown author',
+        genre: genreSeed || result.genre || '',
+        year: yearSeed || result.year || '',
+        isbn: isbnSeed || result.isbn || '',
+        description: descriptionSeed || result.description || 'No description available.',
+        cover_url: coverSeed || result.cover_url || '',
         average_rating: result.average_rating || '',
         ratings_count: result.ratings_count || '',
       };
@@ -249,22 +424,27 @@
 
       titleEl.textContent = info.title;
       authorEl.textContent = info.author;
-      descEl.textContent = info.description;
-      setCover(info.cover_url);
+      setDescription(info.description);
+      setCover(info.cover_url, info);
       setInfoChips(info);
       setMetaList(info);
       setSearchLink(`${info.title} ${info.author}`);
       loadReview(info);
-      loadCriticReviews(info);
+      loadCommunityReviews(info);
+      loadShelves(info);
+      loadGuardianArticles(info);
     } catch (err) {
       titleEl.textContent = titleSeed || 'Book details';
       authorEl.textContent = authorSeed || 'Search unavailable';
-      descEl.textContent = 'We could not reach the book service.';
-      setCover('');
+      setDescription('We could not reach the book service.');
+      setCover('', { title: titleSeed, author: authorSeed });
       setInfoChips({});
       setMetaList({});
-      loadReview({ title: titleSeed, author: authorSeed, isbn: isbnSeed, cover_url: coverSeed });
-      loadCriticReviews({ title: titleSeed, author: authorSeed, isbn: isbnSeed });
+      const fallbackInfo = { title: titleSeed, author: authorSeed, isbn: isbnSeed, cover_url: coverSeed };
+      loadReview(fallbackInfo);
+      loadCommunityReviews(fallbackInfo);
+      loadShelves(fallbackInfo);
+      loadGuardianArticles(fallbackInfo);
     }
   }
 

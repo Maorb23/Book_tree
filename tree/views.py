@@ -61,14 +61,20 @@ def landing(request):
 
 
 def book_page(request):
+    imported_book = None
+    imported_book_id = request.GET.get('imported_book')
+    if imported_book_id and request.user.is_authenticated:
+        imported_book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=imported_book_id)
+
     return render(request, 'book.html', {
-        'title': (request.GET.get('title') or '').strip(),
-        'author': (request.GET.get('author') or '').strip(),
-        'isbn': (request.GET.get('isbn') or '').strip(),
+        'imported_book_id': imported_book.id if imported_book else '',
+        'title': (imported_book.title if imported_book else request.GET.get('title') or '').strip(),
+        'author': (imported_book.author if imported_book else request.GET.get('author') or '').strip(),
+        'isbn': (imported_book.isbn if imported_book else request.GET.get('isbn') or '').strip(),
         'genre': (request.GET.get('genre') or '').strip(),
-        'year': (request.GET.get('year') or '').strip(),
-        'cover_url': (request.GET.get('cover') or '').strip(),
-        'description': (request.GET.get('description') or '').strip(),
+        'year': str(imported_book.year or '') if imported_book else (request.GET.get('year') or '').strip(),
+        'cover_url': (imported_book.get_cover_url() if imported_book else request.GET.get('cover') or '').strip(),
+        'description': (imported_book.notes if imported_book and imported_book.notes else request.GET.get('description') or '').strip(),
     })
 
 
@@ -984,6 +990,74 @@ def _review_queryset_for_request(request):
             reviews = reviews.filter(author__iexact=author)
         return reviews
     return reviews
+
+
+@api_view(['GET'])
+def book_community_reviews(request):
+    isbn = _normalize_goodreads_isbn(request.query_params.get('isbn'))
+    title = (request.query_params.get('title') or '').strip()
+    author = (request.query_params.get('author') or '').strip()
+    reviews = _book_identity_filter(BookReview.objects.select_related('user'), title, author, isbn)
+    reviews = reviews.order_by('-updated_at')[:8]
+    return Response([
+        {
+            'id': review.id,
+            'username': review.user.username,
+            'title': review.title,
+            'author': review.author,
+            'rating': review.rating,
+            'review': review.review,
+            'updated_at': review.updated_at.isoformat() if review.updated_at else '',
+        }
+        for review in reviews
+    ])
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def book_shelves(request):
+    imported_id = request.query_params.get('imported_book')
+    if imported_id:
+        book = get_object_or_404(ImportedBook.objects.filter(user=request.user), pk=imported_id)
+        label = book.custom_shelf.strip() if book.custom_shelf else book.get_shelf_display()
+        return Response({'shelves': [{
+            'shelf': book.shelf,
+            'label': label,
+            'custom_shelf': book.custom_shelf,
+        }]})
+
+    isbn = _normalize_goodreads_isbn(request.query_params.get('isbn'))
+    title = (request.query_params.get('title') or '').strip()
+    author = (request.query_params.get('author') or '').strip()
+    books = _book_identity_filter(ImportedBook.objects.filter(user=request.user), title, author, isbn)
+    shelves = []
+    seen = set()
+    for book in books.order_by('shelf', 'custom_shelf', 'date_added'):
+        label = book.custom_shelf.strip() if book.custom_shelf else book.get_shelf_display()
+        key = (book.shelf, label.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        shelves.append({
+            'shelf': book.shelf,
+            'label': label,
+            'custom_shelf': book.custom_shelf,
+        })
+    return Response({'shelves': shelves})
+
+
+def _book_identity_filter(queryset, title='', author='', isbn=''):
+    filters = Q()
+    if isbn:
+        filters |= Q(isbn=isbn)
+    if title:
+        title_filter = Q(title__iexact=title)
+        if author:
+            title_filter &= Q(author__iexact=author)
+        filters |= title_filter
+    if not filters:
+        return queryset.none()
+    return queryset.filter(filters)
 
 
 @api_view(['GET', 'POST'])
@@ -2261,10 +2335,10 @@ def fetch_cover(request):
     isbn = request.query_params.get('isbn', '')
 
     url = None
-    if isbn:
-        url = _fetch_cover_open_library(isbn)
-    if not url and title:
+    if title:
         url = _fetch_cover_google(title, author)
+    if not url and isbn:
+        url = _fetch_cover_open_library(isbn)
 
     return Response({'cover_url': url or ''})
 
@@ -2311,33 +2385,32 @@ def search_authors(request):
 def critic_reviews(request):
     title = (request.query_params.get('title') or '').strip()
     author = (request.query_params.get('author') or '').strip()
-    isbn = _normalize_goodreads_isbn(request.query_params.get('isbn'))
-    if not title and not isbn:
-        return Response({'results': [], 'detail': 'No book title or ISBN was provided.'})
+    if not title:
+        return Response({'results': [], 'detail': 'No book title was provided.'})
 
-    cache_value = isbn or f'{title}:{author}'
-    cache_key = _cache_key('critic-reviews:nyt-article:v1', cache_value.lower())
+    cache_value = f'{title}:{author}'
+    cache_key = _cache_key('book-articles:guardian:v1', cache_value.lower())
     cached = cache.get(cache_key)
     if cached is not None:
         return Response(cached)
 
-    if not getattr(settings, 'NYTIMES_ARTICLE_SEARCH_API_KEY', ''):
+    if not getattr(settings, 'GUARDIAN_API_KEY', ''):
         payload = {
             'results': [],
-            'detail': 'No NYTimes Article Search API key is configured yet.',
+            'detail': 'No Guardian API key is configured yet.',
         }
         cache.set(cache_key, payload, timeout=60 * 30)
         return Response(payload)
 
     try:
-        results = _search_nytimes_book_reviews(title=title, author=author, isbn=isbn)
+        results = _search_guardian_book_articles(title=title, author=author)
     except Exception:
-        logger.exception('NYTimes article lookup failed for title=%r author=%r isbn=%r', title, author, isbn)
+        logger.exception('Guardian article lookup failed for title=%r author=%r', title, author)
         results = []
 
     payload = {
         'results': results,
-        'detail': '' if results else 'No New York Times article or review match was found for this book.',
+        'detail': '' if results else 'No Guardian article match was found for this book.',
     }
     cache.set(cache_key, payload, timeout=60 * 60 * 24 * 14)
     return Response(payload)
@@ -2431,7 +2504,10 @@ def _search_books_combined(query):
         }
         if canonical.get('cover_url') and not merged_row.get('cover_url'):
             merged_row['cover_url'] = canonical['cover_url']
-        if google_match.get('cover_url') and not merged_row.get('cover_url'):
+        if google_match.get('cover_url') and (
+            not merged_row.get('cover_url')
+            or _is_open_library_cover_url(merged_row.get('cover_url'))
+        ):
             merged_row['cover_url'] = google_match['cover_url']
         merged_row = _apply_known_book_metadata(merged_row)
         merged_row.pop('isbn_options', None)
@@ -2443,6 +2519,10 @@ def _search_books_combined(query):
 def _normalize_text(value):
     normalized = ''.join(ch.lower() if ch.isalnum() else ' ' for ch in str(value or ''))
     return ' '.join(normalized.split())
+
+
+def _is_open_library_cover_url(value):
+    return 'covers.openlibrary.org' in str(value or '')
 
 
 def _book_key(title, author):
@@ -2802,64 +2882,77 @@ def _search_authors_open_library(query, max_results=8, timeout=3.5):
     return results[:max_results]
 
 
-def _search_nytimes_book_reviews(title='', author='', isbn=''):
-    if not title and not author:
+def _search_guardian_book_articles(title='', author=''):
+    if not title:
         return []
 
+    normalized_title = _guardian_fuzzy_title(title)
     queries = []
     if title and author:
         queries.append({
             'q': f'"{title}" "{author}"',
-            'fq': 'typeOfMaterials:Review AND section.name:Books',
         })
     if title:
         queries.append({
             'q': f'"{title}"',
-            'fq': 'typeOfMaterials:Review AND section.name:Books',
+        })
+    if normalized_title and normalized_title != title.lower():
+        queries.append({
+            'q': f'"{normalized_title}" "{author}"' if author else f'"{normalized_title}"',
         })
     if title and author:
         queries.append({
-            'q': f'"{title}" "{author}" book review',
-            'fq': 'section.name:Books',
+            'q': f'{title} {author} book review',
         })
 
     rows = []
     for query_params in queries:
         params = {
-            'api-key': settings.NYTIMES_ARTICLE_SEARCH_API_KEY,
-            'sort': 'relevance',
-            'page': 0,
+            'api-key': settings.GUARDIAN_API_KEY,
+            'section': 'books',
+            'order-by': 'relevance',
+            'page-size': 2,
+            'show-fields': 'trailText,headline,byline,shortUrl',
             **query_params,
         }
         resp = requests.get(
-            'https://api.nytimes.com/svc/search/v2/articlesearch.json',
+            'https://content.guardianapis.com/search',
             params=params,
             headers={'User-Agent': 'Readwoods/1.0 (+https://localhost)'},
             timeout=3.5,
         )
         resp.raise_for_status()
-        rows = ((resp.json().get('response') or {}).get('docs') or [])
+        rows = ((resp.json().get('response') or {}).get('results') or [])
         if rows:
             break
 
     results = []
-    for row in rows[:5]:
-        url = row.get('web_url') or ''
+    for row in rows[:2]:
+        url = row.get('webUrl') or ''
         if not url:
             continue
-        headline = row.get('headline') or {}
-        byline = row.get('byline') or {}
+        fields = row.get('fields') or {}
         results.append({
-            'source': 'The New York Times',
+            'source': 'The Guardian',
             'book_title': title,
             'book_author': author,
-            'review_title': headline.get('main') or row.get('abstract') or 'NYTimes Article',
-            'reviewer': byline.get('original') or '',
-            'published_date': (row.get('pub_date') or '')[:10],
-            'summary': row.get('abstract') or row.get('snippet') or row.get('lead_paragraph') or '',
+            'review_title': fields.get('headline') or row.get('webTitle') or 'Guardian article',
+            'reviewer': fields.get('byline') or '',
+            'published_date': (row.get('webPublicationDate') or '')[:10],
+            'summary': _strip_html(fields.get('trailText') or ''),
             'url': url,
         })
     return results
+
+
+def _guardian_fuzzy_title(title):
+    title = str(title or '').lower()
+    title = re.sub(r'[^\w\s]', ' ', title)
+    return ' '.join(title.split())
+
+
+def _strip_html(value):
+    return re.sub(r'<[^>]+>', '', unescape(str(value or ''))).strip()
 
 
 def _fetch_cover_google(title, author=''):

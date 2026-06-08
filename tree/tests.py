@@ -183,6 +183,9 @@ class EmailSettingsTests(SimpleTestCase):
 
 
 class BookSearchMetadataTests(SimpleTestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_known_metadata_preserves_beloved_original_publication(self):
         row = _apply_known_book_metadata({
             'title': 'Beloved',
@@ -277,18 +280,21 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(row['average_rating'], 4.5)
         self.assertEqual(row['ratings_count'], 123)
 
-    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='nyt-test-key')
+    @override_settings(GUARDIAN_API_KEY='guardian-test-key')
     @patch('tree.views.requests.get')
-    def test_critic_reviews_uses_nytimes_api_key(self, mock_get):
+    def test_critic_reviews_uses_guardian_api_key(self, mock_get):
         mock_get.return_value.raise_for_status.return_value = None
         mock_get.return_value.json.return_value = {
             'response': {
-                'docs': [{
-                    'headline': {'main': 'A Desert Epic'},
-                    'byline': {'original': 'By A Critic'},
-                    'pub_date': '1965-01-01T00:00:00Z',
-                    'abstract': 'A review summary.',
-                    'web_url': 'https://www.nytimes.com/review/dune',
+                'results': [{
+                    'webTitle': 'A Desert Epic',
+                    'webPublicationDate': '1965-01-01T00:00:00Z',
+                    'webUrl': 'https://www.theguardian.com/books/dune',
+                    'fields': {
+                        'headline': 'A Desert Epic',
+                        'byline': 'A Critic',
+                        'trailText': '<p>A review summary.</p>',
+                    },
                 }]
             }
         }
@@ -296,28 +302,30 @@ class BookSearchMetadataTests(SimpleTestCase):
         response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune', 'author': 'Frank Herbert'})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['results'][0]['source'], 'The New York Times')
+        self.assertEqual(response.json()['results'][0]['source'], 'The Guardian')
         self.assertEqual(response.json()['results'][0]['review_title'], 'A Desert Epic')
-        self.assertEqual(mock_get.call_args.kwargs['params']['api-key'], 'nyt-test-key')
-        self.assertEqual(mock_get.call_args.kwargs['params']['sort'], 'relevance')
+        self.assertEqual(response.json()['results'][0]['summary'], 'A review summary.')
+        self.assertEqual(mock_get.call_args.kwargs['params']['api-key'], 'guardian-test-key')
+        self.assertEqual(mock_get.call_args.kwargs['params']['section'], 'books')
+        self.assertEqual(mock_get.call_args.kwargs['params']['order-by'], 'relevance')
+        self.assertEqual(mock_get.call_args.kwargs['params']['page-size'], 2)
         self.assertIn('"Dune"', mock_get.call_args.kwargs['params']['q'])
         self.assertIn('"Frank Herbert"', mock_get.call_args.kwargs['params']['q'])
-        self.assertEqual(mock_get.call_args.kwargs['params']['fq'], 'typeOfMaterials:Review AND section.name:Books')
-        self.assertEqual(mock_get.call_args.args[0], 'https://api.nytimes.com/svc/search/v2/articlesearch.json')
+        self.assertEqual(mock_get.call_args.args[0], 'https://content.guardianapis.com/search')
 
-    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='nyt-test-key')
+    @override_settings(GUARDIAN_API_KEY='guardian-test-key')
     @patch('tree.views.requests.get')
-    def test_critic_reviews_broadens_search_when_exact_review_query_has_no_results(self, mock_get):
+    def test_critic_reviews_broadens_guardian_search_when_exact_query_has_no_results(self, mock_get):
         empty_response = Mock(status_code=200)
         empty_response.raise_for_status.return_value = None
-        empty_response.json.return_value = {'response': {'docs': []}}
+        empty_response.json.return_value = {'response': {'results': []}}
         match_response = Mock(status_code=200)
         match_response.raise_for_status.return_value = None
         match_response.json.return_value = {
             'response': {
-                'docs': [{
-                    'headline': {'main': 'A Desert Epic'},
-                    'web_url': 'https://www.nytimes.com/review/dune',
+                'results': [{
+                    'webTitle': 'A Desert Epic',
+                    'webUrl': 'https://www.theguardian.com/books/dune',
                 }]
             }
         }
@@ -335,7 +343,7 @@ class BookSearchMetadataTests(SimpleTestCase):
         self.assertEqual(mock_get.call_args_list[0].kwargs['params']['q'], '"Dune" "Frank Herbert"')
         self.assertEqual(mock_get.call_args_list[1].kwargs['params']['q'], '"Dune"')
 
-    @override_settings(NYTIMES_ARTICLE_SEARCH_API_KEY='')
+    @override_settings(GUARDIAN_API_KEY='')
     def test_critic_reviews_returns_disclaimer_without_key(self):
         response = self.client.get(reverse('tree:api-critic-reviews'), {'title': 'Dune'})
 
@@ -530,6 +538,88 @@ class GoodreadsImportTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(BookReview.objects.get(user=self.user, node=node).review, 'Still enormous and strange.')
+
+    def test_book_community_reviews_returns_matching_reviews(self):
+        other_user = User.objects.create_user(username='other_reader', password='pass1234')
+        BookReview.objects.create(
+            user=other_user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            rating=5,
+            review='Sand, politics, worms. Perfect.',
+        )
+
+        response = self.client.get(reverse('tree:api-book-community-reviews'), {
+            'title': 'Dune',
+            'author': 'Frank Herbert',
+            'isbn': '9780441172719',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()[0]['username'], 'other_reader')
+        self.assertEqual(response.json()[0]['review'], 'Sand, politics, worms. Perfect.')
+
+    def test_book_shelves_returns_user_shelves_for_matching_book(self):
+        ImportedBook.objects.create(
+            user=self.user,
+            title='Dune',
+            author='Frank Herbert',
+            isbn='9780441172719',
+            shelf=Node.SHELF_READ,
+            custom_shelf='desert books',
+        )
+
+        response = self.client.get(reverse('tree:api-book-shelves'), {
+            'title': 'Dune',
+            'author': 'Frank Herbert',
+            'isbn': '9780441172719',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['shelves'][0]['label'], 'desert books')
+
+    def test_book_page_uses_imported_book_metadata_first(self):
+        imported_book = ImportedBook.objects.create(
+            user=self.user,
+            title='A Farewell to Arms',
+            author='Ernest Hemingway',
+            year=1929,
+            isbn='9780099910107',
+            cover_image='https://example.com/farewell.jpg',
+            shelf=Node.SHELF_READ,
+            custom_shelf='Americana',
+        )
+
+        response = self.client.get(reverse('tree:book'), {
+            'imported_book': imported_book.id,
+            'title': 'Wrong Title',
+            'year': '1994',
+            'cover': 'https://example.com/wrong.jpg',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertIn('data-imported-book="%s"' % imported_book.id, content)
+        self.assertIn('data-title="A Farewell to Arms"', content)
+        self.assertIn('data-year="1929"', content)
+        self.assertIn('data-cover-url="https://example.com/farewell.jpg"', content)
+
+    def test_my_books_links_to_exact_imported_book_page(self):
+        imported_book = ImportedBook.objects.create(
+            user=self.user,
+            title='A Farewell to Arms',
+            author='Ernest Hemingway',
+            year=1929,
+            isbn='9780099910107',
+            cover_image='https://example.com/farewell.jpg',
+            shelf=Node.SHELF_READ,
+        )
+
+        response = self.client.get(reverse('tree:my-books'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'imported_book={imported_book.id}', response.content.decode())
 
     def test_friends_can_view_friend_visible_shared_tree(self):
         friend = User.objects.create_user(username='friend', password='pass1234')

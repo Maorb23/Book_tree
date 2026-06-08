@@ -164,7 +164,7 @@
     <div class="book-grid" id="bookGrid">
       {% for book in books %}
       <article class="library-book" data-id="{{ book.id }}" data-source="{{ book.library_source }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}" data-isbn="{{ book.isbn }}" data-cover="{{ book.get_cover_url|default:'' }}" data-genre="{{ book.genre|lower }}" data-shelf="{{ book.shelf }}" data-custom="{{ book.custom_shelf|lower }}" data-custom-label="{{ book.custom_shelf|escape }}" data-reviewed="{% if book.user_review %}1{% else %}0{% endif %}">
-        <a class="library-book__cover" href="{% url 'tree:book' %}?title={{ book.title|urlencode }}{% if book.author %}&author={{ book.author|urlencode }}{% endif %}{% if book.isbn %}&isbn={{ book.isbn|urlencode }}{% endif %}{% if book.genre %}&genre={{ book.genre|urlencode }}{% endif %}{% if book.year %}&year={{ book.year|urlencode }}{% endif %}{% if book.cover_image %}&cover={{ book.cover_image|urlencode }}{% endif %}">
+        <a class="library-book__cover" href="{% url 'tree:book' %}?{% if book.library_source == 'imported' %}imported_book={{ book.id }}&{% endif %}title={{ book.title|urlencode }}{% if book.author %}&author={{ book.author|urlencode }}{% endif %}{% if book.isbn %}&isbn={{ book.isbn|urlencode }}{% endif %}{% if book.genre %}&genre={{ book.genre|urlencode }}{% endif %}{% if book.year %}&year={{ book.year|urlencode }}{% endif %}{% if book.get_cover_url %}&cover={{ book.get_cover_url|urlencode }}{% endif %}">
           {% if book.get_cover_url %}
             <img src="{{ book.get_cover_url }}" alt="{{ book.title }} cover" loading="lazy">
           {% else %}

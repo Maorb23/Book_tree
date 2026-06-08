@@ -29,47 +29,80 @@
   </div>
 </nav>
 
-<main class="book-page" data-title="{{ title|escape }}" data-author="{{ author|escape }}" data-isbn="{{ isbn|escape }}" data-genre="{{ genre|escape }}" data-year="{{ year|escape }}" data-cover-url="{{ cover_url|escape }}" data-description="{{ description|escape }}">
+<main class="book-page" data-imported-book="{{ imported_book_id }}" data-title="{{ title|escape }}" data-author="{{ author|escape }}" data-isbn="{{ isbn|escape }}" data-genre="{{ genre|escape }}" data-year="{{ year|escape }}" data-cover-url="{{ cover_url|escape }}" data-description="{{ description|escape }}">
   <section class="book-hero">
     <div class="book-hero__bg"></div>
     <div class="book-hero__content">
       <div class="book-hero__cover" id="bookCover">
         <span>Loading cover</span>
       </div>
-      <div class="book-hero__meta">
-        <p class="book-hero__eyebrow">Readwoods Book Page</p>
-        <h1 id="bookTitle">Searching...</h1>
-        <p class="book-hero__author" id="bookAuthor"></p>
-        <div class="book-hero__info" id="bookInfo"></div>
-        <div class="book-hero__actions">
-          <a id="bookSearchLink" class="btn btn--ghost" href="#">Search on Google Books</a>
+      <div class="book-hero__main">
+        <div class="book-hero__meta">
+          <p class="book-hero__eyebrow">Readwoods Book Page</p>
+          <div class="book-title-row">
+            <h1 id="bookTitle">Searching...</h1>
+            <div class="book-shelf-tags" id="bookShelfTags" hidden></div>
+          </div>
+          <p class="book-hero__author" id="bookAuthor"></p>
+          <div class="book-about-compact">
+            <h2>About this book</h2>
+            <p id="bookDescription" class="is-clamped">Fetching details...</p>
+            <button id="bookDescriptionToggle" type="button" hidden>Read more</button>
+          </div>
+          <div class="book-hero__info" id="bookInfo"></div>
+          <div class="book-hero__actions">
+            <a id="bookSearchLink" class="btn btn--ghost" href="#">Search on Google Books</a>
+            {% if request.user.is_authenticated %}
+              <button id="addBookReview" class="btn btn--ghost" type="button">Add a Review</button>
+            {% endif %}
+            <a href="{% url 'tree:tree' %}" class="btn btn--primary">Go to My Tree</a>
+          </div>
           {% if request.user.is_authenticated %}
-            <button id="addBookReview" class="btn btn--ghost" type="button">Add a Review</button>
+            <form class="book-review-form" id="bookReviewForm" hidden>
+              <div class="book-review-form__head">
+                <div>
+                  <span>My review</span>
+                  <strong id="reviewFormTitle">Review this book</strong>
+                </div>
+                <button class="book-review-form__close" id="cancelBookReview" type="button" aria-label="Close review form">&times;</button>
+              </div>
+              <label for="bookReviewRating">Rating</label>
+              <div class="rating-control" id="bookReviewRating" role="radiogroup" aria-label="Book rating">
+                <button type="button" data-rating="1">&#9733;</button>
+                <button type="button" data-rating="2">&#9733;</button>
+                <button type="button" data-rating="3">&#9733;</button>
+                <button type="button" data-rating="4">&#9733;</button>
+                <button type="button" data-rating="5">&#9733;</button>
+              </div>
+              <label for="bookReviewText">Review</label>
+              <textarea id="bookReviewText" rows="5" maxlength="2500" placeholder="What stayed with you?"></textarea>
+              <div class="book-review-form__actions">
+                <span id="reviewFormStatus" aria-live="polite"></span>
+                <button class="btn btn--primary" type="submit">Save Review</button>
+              </div>
+            </form>
+            <div class="book-review-box" id="bookReviewBox" hidden></div>
           {% endif %}
-          <a href="{% url 'tree:tree' %}" class="btn btn--primary">Go to My Tree</a>
         </div>
-        {% if request.user.is_authenticated %}
-          <div class="book-review-box" id="bookReviewBox" hidden></div>
-        {% endif %}
+        <aside class="book-hero__details" id="bookMetaCard">
+          <h3>Details</h3>
+          <ul id="bookMetaList"></ul>
+        </aside>
       </div>
     </div>
   </section>
 
   <section class="book-details">
-    <div class="book-details__card">
-      <h2>About this book</h2>
-      <p id="bookDescription">Fetching details...</p>
-    </div>
-    <div class="book-details__card" id="bookMetaCard">
-      <h3>Details</h3>
-      <ul id="bookMetaList"></ul>
+    <div class="book-details__card community-reviews-card">
+      <h2>Community Reviews</h2>
+      <div id="communityReviews">Checking the reading room...</div>
     </div>
     <div class="book-details__card critic-reviews-card">
-      <h3>Critic Reviews</h3>
-      <div id="criticReviews">Looking for critic reviews...</div>
+      <h2>Book Insights</h2>
+      <div id="criticReviews">Looking for Guardian article matches...</div>
     </div>
   </section>
 </main>
 
-<script src="{% static 'js/book.js' %}"></script>
+<script src="{% static 'js/book.js' %}?v=library-first-1"></script>
 {% endblock %}
