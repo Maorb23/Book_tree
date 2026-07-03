@@ -632,7 +632,7 @@
         showToast('Could not update this shelf.');
       } finally {
         button.disabled = false;
-        button.textContent = 'Save';
+        button.textContent = 'Save To Shelf';
       }
     });
   });
@@ -667,7 +667,7 @@
         showToast(error.message || 'Could not update the tree.');
       } finally {
         button.disabled = false;
-        button.textContent = 'Add';
+        button.textContent = 'Add to tree';
       }
     });
   });

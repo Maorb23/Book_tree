@@ -687,13 +687,25 @@ body {
 
 .add-to-tree {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(76px, auto);
+  grid-template-columns: minmax(118px, 1fr) minmax(118px, auto);
   gap: 8px;
 }
 
 .add-book-to-tree {
-  min-width: 76px;
+  min-width: 118px;
   justify-content: center;
+}
+
+.save-book-shelf,
+.add-book-review {
+  justify-content: center;
+  min-height: 38px;
+  white-space: normal;
+  text-align: center;
+}
+
+.tree-parent-select {
+  min-width: 118px;
 }
 
 .reviewed-books {
@@ -907,6 +919,12 @@ body {
 
   .add-to-tree {
     grid-template-columns: 1fr;
+  }
+
+  .add-book-to-tree,
+  .tree-parent-select {
+    width: 100%;
+    min-width: 0;
   }
 
   .reading-update {
