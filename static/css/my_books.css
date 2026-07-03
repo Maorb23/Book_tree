@@ -532,18 +532,19 @@ body {
 
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .library-book {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: 14px;
-  padding: 14px;
-  border: 1px solid rgba(130, 156, 118, 0.22);
-  background: rgba(7, 12, 8, 0.44);
-  border-radius: 8px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid rgba(130, 156, 118, 0.26);
+  background:
+    linear-gradient(180deg, rgba(12, 20, 13, 0.82), rgba(7, 12, 8, 0.72));
+  border-radius: 10px;
 }
 
 .library-book.is-hidden {
@@ -603,16 +604,85 @@ body {
 
 .reading-update {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(130px, auto) minmax(100px, auto);
-  gap: 8px;
-  padding: 9px;
-  border: 1px solid rgba(157, 204, 122, 0.28);
-  border-radius: 8px;
-  background: rgba(16, 30, 17, 0.58);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(157, 204, 122, 0.34);
+  border-radius: 10px;
+  background:
+    radial-gradient(220px 120px at 96% 0%, rgba(226, 175, 46, 0.12), transparent 70%),
+    rgba(13, 24, 14, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .reading-update[hidden] {
   display: none;
+}
+
+.reading-update__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reading-update__head strong {
+  display: block;
+  color: #f6fff3;
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.reading-update__head span {
+  display: block;
+  margin-top: 3px;
+  color: #9fb09d;
+  font-size: 0.82rem;
+}
+
+.reading-update__toggle {
+  flex: 0 0 auto;
+  border: 1px solid rgba(157, 204, 122, 0.35);
+  border-radius: 999px;
+  background: rgba(8, 13, 9, 0.66);
+  color: #d9ead5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
+.reading-update__toggle:hover,
+.reading-update__toggle:focus-visible {
+  border-color: rgba(226, 175, 46, 0.72);
+  color: #fff7d1;
+  outline: none;
+}
+
+.reading-update__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.reading-update.is-collapsed .reading-update__body {
+  display: none;
+}
+
+.reading-update__body label {
+  display: grid;
+  gap: 6px;
+  color: #cfe0cc;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reading-update__body .btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 42px;
 }
 
 .add-to-tree {
@@ -697,8 +767,12 @@ body {
   background: rgba(10, 16, 11, 0.85);
   color: #eef6ed;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 10px 11px;
   font: inherit;
+}
+
+.library-book__controls input::placeholder {
+  color: #849383;
 }
 
 .shelf-toast {

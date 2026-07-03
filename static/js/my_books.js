@@ -26,6 +26,13 @@
   let activeFilter = 'all';
   let previewBooks = [];
   let catalogSearchTimer = null;
+  const readingPanelState = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('readwoodsReadingPanels') || '{}');
+    } catch (_) {
+      return {};
+    }
+  })();
 
   function getCsrf() {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
@@ -37,6 +44,27 @@
     toast.textContent = message;
     toast.classList.add('visible');
     setTimeout(() => toast.classList.remove('visible'), 2200);
+  }
+
+  function readingPanelKey(card) {
+    return `${card.dataset.source || 'book'}:${card.dataset.id || card.dataset.title || ''}`;
+  }
+
+  function saveReadingPanelState() {
+    try {
+      localStorage.setItem('readwoodsReadingPanels', JSON.stringify(readingPanelState));
+    } catch (_) {
+      // Ignore storage failures; the panel still works for this session.
+    }
+  }
+
+  function setReadingPanelCollapsed(panel, collapsed) {
+    panel.classList.toggle('is-collapsed', collapsed);
+    const toggle = panel.querySelector('.reading-update__toggle');
+    if (toggle) {
+      toggle.textContent = collapsed ? 'Show' : 'Hide';
+      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    }
   }
 
   function escapeHtml(value) {
@@ -80,6 +108,7 @@
     const panel = card.querySelector('.reading-update');
     if (!panel) return;
     panel.hidden = card.dataset.shelf !== 'currently_reading';
+    setReadingPanelCollapsed(panel, readingPanelState[readingPanelKey(card)] === 'hidden');
     const dateInput = panel.querySelector('.reading-date-input');
     if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
   }
@@ -148,6 +177,18 @@
   });
 
   search?.addEventListener('input', applyFilters);
+
+  document.addEventListener('click', event => {
+    const button = event.target.closest('.reading-update__toggle');
+    if (!button) return;
+    const panel = button.closest('.reading-update');
+    const card = button.closest('.library-book');
+    if (!panel || !card) return;
+    const collapsed = !panel.classList.contains('is-collapsed');
+    setReadingPanelCollapsed(panel, collapsed);
+    readingPanelState[readingPanelKey(card)] = collapsed ? 'hidden' : 'shown';
+    saveReadingPanelState();
+  });
 
   async function saveReviewForCard(card, reviewText) {
     const res = await fetch('/api/book-reviews/', {
