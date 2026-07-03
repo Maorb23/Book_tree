@@ -2,6 +2,8 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
+from .models import UserProfile
+
 
 class EmailUserCreationForm(UserCreationForm):
     email = forms.EmailField(
@@ -26,3 +28,20 @@ class EmailUserCreationForm(UserCreationForm):
         if commit:
             user.save()
         return user
+
+
+class UserProfileForm(forms.ModelForm):
+    class Meta:
+        model = UserProfile
+        fields = ('display_name', 'bio', 'avatar_symbol')
+        widgets = {
+            'display_name': forms.TextInput(attrs={
+                'placeholder': 'Your reading name',
+                'maxlength': 120,
+            }),
+            'bio': forms.Textarea(attrs={
+                'placeholder': 'A short note about your reading forest',
+                'rows': 4,
+            }),
+            'avatar_symbol': forms.RadioSelect,
+        }

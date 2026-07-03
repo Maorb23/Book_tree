@@ -285,10 +285,26 @@ class Edge(models.Model):
 
 
 class UserProfile(models.Model):
+    AVATAR_EVERGREEN = '🌲'
+    AVATAR_DECIDUOUS = '🌳'
+    AVATAR_SAPLING = '🌱'
+    AVATAR_PALM = '🌴'
+    AVATAR_MAPLE = '🍁'
+    AVATAR_BLOSSOM = '🌸'
+    AVATAR_CHOICES = [
+        (AVATAR_EVERGREEN, 'Evergreen'),
+        (AVATAR_DECIDUOUS, 'Oak'),
+        (AVATAR_SAPLING, 'Sapling'),
+        (AVATAR_PALM, 'Palm'),
+        (AVATAR_MAPLE, 'Autumn'),
+        (AVATAR_BLOSSOM, 'Bloom'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     display_name = models.CharField(max_length=120, blank=True)
     bio = models.TextField(blank=True)
     avatar_url = models.URLField(max_length=500, blank=True)
+    avatar_symbol = models.CharField(max_length=8, choices=AVATAR_CHOICES, default=AVATAR_EVERGREEN)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

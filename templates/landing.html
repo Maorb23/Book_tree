@@ -28,6 +28,7 @@
       <a href="{% url 'tree:challenges' %}">Challenges</a>
       <a href="{% url 'tree:tree' %}" class="nav__cta">My Tree</a>
       <a href="{% url 'tree:logout' %}">Logout</a>
+      {% include "partials/user_avatar.html" %}
     {% else %}
       <a href="{% url 'tree:login' %}">Sign In</a>
       <a href="{% url 'tree:register' %}" class="nav__cta">Create Account</a>

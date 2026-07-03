@@ -103,6 +103,23 @@
       border: 1px solid var(--border); background: rgba(20, 28, 20, 0.76);
       font-size: 0.8rem; color: var(--text-light);
     }
+    .user-avatar {
+      width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center;
+      flex: 0 0 42px; padding: 0; border: 1px solid rgba(242, 197, 114, 0.5);
+      border-radius: 50%; background: radial-gradient(circle at 35% 25%, #fff6cf, #dfe9c8 46%, #486a36 100%);
+      color: #1a2a16; text-decoration: none; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+      transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    }
+    .user-avatar:hover,
+    .user-avatar:focus-visible {
+      border-color: var(--accent); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+      transform: translateY(-1px) scale(1.04); outline: none;
+    }
+    .user-avatar__symbol { font-size: 1.42rem; line-height: 1; }
+    .user-avatar__name {
+      position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
     .tree-switcher {
       min-width: 150px; max-width: 220px; padding: 8px 10px; border-radius: 999px;
       border: 1px solid var(--border); background: rgba(20, 28, 20, 0.86);
@@ -525,6 +542,7 @@
       <button class="btn btn--ghost" id="saveTreeBtn" type="button">Save Tree</button>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
       {% endif %}
+      {% include "partials/user_avatar.html" %}
     </div>
   </nav>
 

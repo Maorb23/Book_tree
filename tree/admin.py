@@ -21,7 +21,7 @@ class EdgeAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'display_name', 'created_at')
+    list_display = ('user', 'display_name', 'avatar_symbol', 'created_at')
     search_fields = ('user__username', 'display_name')
 
 

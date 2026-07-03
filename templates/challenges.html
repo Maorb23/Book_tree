@@ -21,6 +21,7 @@
     <a href="{% url 'tree:my-books' %}">My Books</a>
     <a href="{% url 'tree:community-feed' %}">Community</a>
     <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
+    {% include "partials/user_avatar.html" %}
   </div>
 </nav>
 

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - My Profile{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/landing.css' %}">
+{% endblock %}
+
+{% block body %}
+<nav class="nav nav--solid">
+  <a class="nav__logo" href="{% url 'tree:landing' %}">
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
+  </a>
+  <div class="nav__links">
+    <a href="{% url 'tree:landing' %}">Home</a>
+    <a href="{% url 'tree:tree' %}">My Tree</a>
+    <a href="{% url 'tree:my-books' %}">My Books</a>
+    <a href="{% url 'tree:challenges' %}">Challenges</a>
+    <a href="{% url 'tree:community-feed' %}">Community</a>
+    <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
+    {% include "partials/user_avatar.html" %}
+  </div>
+</nav>
+
+<main class="profile-page">
+  <section class="profile-panel">
+    <div class="profile-preview" aria-hidden="true">
+      <span>{{ profile.avatar_symbol }}</span>
+    </div>
+    <div class="profile-copy">
+      <p class="section-kicker">My Profile</p>
+      <h1>Choose the tree that represents you.</h1>
+      <p>Your avatar follows you through Readwoods and helps friends recognize your reading updates.</p>
+    </div>
+  </section>
+
+  <form class="profile-form" method="post">
+    {% csrf_token %}
+    {% if saved %}
+      <div class="profile-message">Profile saved.</div>
+    {% endif %}
+
+    <label>
+      Display name
+      {{ form.display_name }}
+    </label>
+    {% if form.display_name.errors %}
+      <div class="field-error">{{ form.display_name.errors|join:", " }}</div>
+    {% endif %}
+
+    <label>
+      Bio
+      {{ form.bio }}
+    </label>
+    {% if form.bio.errors %}
+      <div class="field-error">{{ form.bio.errors|join:", " }}</div>
+    {% endif %}
+
+    <fieldset class="avatar-picker">
+      <legend>Tree avatar</legend>
+      <div class="avatar-picker__grid">
+        {% for option in form.avatar_symbol %}
+          <label class="avatar-choice">
+            {{ option.tag }}
+            <span class="avatar-choice__symbol">{{ option.data.value }}</span>
+            <span class="avatar-choice__label">{{ option.choice_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% if form.avatar_symbol.errors %}
+      <div class="field-error">{{ form.avatar_symbol.errors|join:", " }}</div>
+    {% endif %}
+
+    <div class="profile-actions">
+      <button class="btn btn--primary" type="submit">Save Profile</button>
+      <a class="btn btn--ghost" href="{% url 'tree:tree' %}">Back to Tree</a>
+    </div>
+  </form>
+</main>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% if request.user.is_authenticated %}
+  {% with profile=request.user.profile %}
+    <a class="user-avatar" href="{% url 'tree:my-profile' %}" aria-label="My profile" title="My profile">
+      <span class="user-avatar__symbol" aria-hidden="true">{{ profile.avatar_symbol|default:"🌲" }}</span>
+      <span class="user-avatar__name">{{ profile.display_name|default:request.user.username }}</span>
+    </a>
+  {% endwith %}
+{% endif %}

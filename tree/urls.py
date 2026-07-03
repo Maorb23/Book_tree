@@ -23,6 +23,7 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('tree/', views.tree_page, name='tree'),
     path('users/<str:username>/trees/<int:tree_id>/', views.shared_tree_page, name='shared-tree'),
+    path('my-profile/', views.my_profile, name='my-profile'),
     path('my-books/', views.my_books, name='my-books'),
     path('challenges/', views.challenges, name='challenges'),
     path('book/', views.book_page, name='book'),

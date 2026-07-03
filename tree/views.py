@@ -39,10 +39,10 @@ from rest_framework import status
 
 from .models import (
     Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, BookReview,
-    Tree, TreeVersion, ReadingChallenge, DailyPageLog,
+    Tree, TreeVersion, ReadingChallenge, DailyPageLog, UserProfile,
 )
 from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer, BookReviewSerializer
-from .forms import EmailUserCreationForm
+from .forms import EmailUserCreationForm, UserProfileForm
 
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,26 @@ def my_books(request):
 def challenges(request):
     context = _challenge_context(request.user)
     return render(request, 'challenges.html', context)
+
+
+@login_required
+def my_profile(request):
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    saved = False
+
+    if request.method == 'POST':
+        form = UserProfileForm(request.POST, instance=profile)
+        if form.is_valid():
+            form.save()
+            saved = True
+    else:
+        form = UserProfileForm(instance=profile)
+
+    return render(request, 'my_profile.html', {
+        'form': form,
+        'profile': profile,
+        'saved': saved,
+    })
 
 
 def _challenge_context(user):
