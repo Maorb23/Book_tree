@@ -120,6 +120,41 @@
       position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0);
       white-space: nowrap;
     }
+    .nav__tree-link { font-weight: 800; }
+    .nav-menu,
+    .nav-profile {
+      position: relative; display: inline-flex; align-items: center;
+      padding-block: 10px; margin-block: -10px;
+    }
+    .nav-menu__trigger { display: inline-flex; align-items: center; min-height: 40px; }
+    .nav-menu__panel,
+    .nav-profile__panel {
+      position: absolute; top: 100%; right: 0; z-index: 350;
+      min-width: 190px; display: grid; gap: 6px; padding: 10px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: rgba(13, 18, 13, 0.98); box-shadow: var(--shadow);
+      opacity: 0; pointer-events: none; transform: translateY(-4px);
+      transition: opacity var(--transition), transform var(--transition);
+    }
+    .nav-menu__panel { left: 0; right: auto; }
+    .nav-menu__panel::before,
+    .nav-profile__panel::before {
+      content: ""; position: absolute; left: 0; right: 0; top: -14px; height: 14px;
+    }
+    .nav-menu:hover .nav-menu__panel,
+    .nav-menu:focus-within .nav-menu__panel,
+    .nav-profile:hover .nav-profile__panel,
+    .nav-profile:focus-within .nav-profile__panel {
+      opacity: 1; pointer-events: auto; transform: translateY(0);
+    }
+    .nav-menu__panel a,
+    .nav-profile__panel a {
+      display: block; padding: 11px 12px; border-radius: 6px;
+      color: var(--text-light); text-decoration: none; white-space: nowrap;
+      font-size: 0.9rem;
+    }
+    .nav-menu__panel a:hover,
+    .nav-profile__panel a:hover { background: rgba(242, 197, 114, 0.12); }
     .tree-switcher {
       min-width: 150px; max-width: 220px; padding: 8px 10px; border-radius: 999px;
       border: 1px solid var(--border); background: rgba(20, 28, 20, 0.86);
@@ -525,6 +560,27 @@
     <div class="nav__links">
       <span class="nav__user">{{ request.user.username }}</span>
       {% if is_readonly_tree %}<span class="nav__user">Viewing {{ tree_owner.username }}'s tree</span>{% endif %}
+      <div class="nav-menu">
+        <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost nav-menu__trigger">Community</a>
+        <div class="nav-menu__panel">
+          <a href="{% url 'tree:community-feed' %}">Feed</a>
+          <a href="{% url 'tree:community-people' %}">Find People</a>
+          <a href="{% url 'tree:community-requests' %}">Requests</a>
+          <a href="{% url 'tree:community-friends' %}">Friends</a>
+          <a href="{% url 'tree:community-my-posts' %}">My Posts</a>
+        </div>
+      </div>
+      <a href="{% url 'tree:tree' %}" class="btn btn--primary nav__tree-link">My Tree</a>
+      <a href="{% url 'tree:stats' %}" class="btn btn--ghost">Stats</a>
+      <div class="nav-profile">
+        {% include "partials/user_avatar.html" %}
+        <div class="nav-profile__panel">
+          <a href="{% url 'tree:my-profile' %}">My Profile</a>
+          <a href="{% url 'tree:my-books' %}">My Books</a>
+          <a href="{% url 'tree:challenges' %}">Challenges</a>
+          <a href="{% url 'tree:logout' %}">Logout</a>
+        </div>
+      </div>
       <select class="tree-switcher" id="treeSwitcher" aria-label="Current tree" {% if is_readonly_tree %}disabled{% endif %}>
         {% for tree in trees %}
           <option value="{{ tree.id }}" {% if tree.id == current_tree.id %}selected{% endif %}>{{ tree.name }}</option>
@@ -532,17 +588,12 @@
       </select>
       {% if not is_readonly_tree %}
       <button class="btn btn--danger tree-delete-btn" id="deleteTreeBtn" type="button">Delete Tree</button>
-      <a href="{% url 'tree:my-books' %}" class="btn btn--ghost">My Books</a>
       {% endif %}
-      <a href="{% url 'tree:challenges' %}" class="btn btn--ghost">Challenges</a>
-      <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost">Community</a>
-      <a href="{% url 'tree:logout' %}" class="btn btn--ghost">Logout</a>
       {% if not is_readonly_tree %}
       <button class="btn btn--ghost" id="treeVersionsBtn" type="button">Versions</button>
       <button class="btn btn--ghost" id="saveTreeBtn" type="button">Save Tree</button>
       <button class="btn btn--primary" id="addBookBtn">+ Add Node</button>
       {% endif %}
-      {% include "partials/user_avatar.html" %}
     </div>
   </nav>
 

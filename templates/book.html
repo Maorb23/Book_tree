@@ -8,27 +8,7 @@
 {% endblock %}
 
 {% block body %}
-<nav class="nav nav--solid">
-  <a href="{% url 'tree:landing' %}" class="nav__logo" aria-label="Readwoods home">
-    <span class="site-logo" aria-hidden="true">
-      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
-    </span>
-    <span class="nav__name">Readwoods</span>
-  </a>
-  <div class="nav__links">
-    <a href="{% url 'tree:landing' %}">Home</a>
-    {% if request.user.is_authenticated %}
-      <a href="{% url 'tree:my-books' %}">My Books</a>
-      <a href="{% url 'tree:challenges' %}">Challenges</a>
-      <a href="{% url 'tree:tree' %}" class="nav__cta">My Tree</a>
-      <a href="{% url 'tree:logout' %}">Logout</a>
-      {% include "partials/user_avatar.html" %}
-    {% else %}
-      <a href="{% url 'tree:login' %}">Sign In</a>
-      <a href="{% url 'tree:register' %}" class="nav__cta">Create Account</a>
-    {% endif %}
-  </div>
-</nav>
+{% include "partials/main_nav.html" %}
 
 <main class="book-page" data-imported-book="{{ imported_book_id }}" data-title="{{ title|escape }}" data-author="{{ author|escape }}" data-isbn="{{ isbn|escape }}" data-genre="{{ genre|escape }}" data-year="{{ year|escape }}" data-cover-url="{{ cover_url|escape }}" data-description="{{ description|escape }}">
   <section class="book-hero">

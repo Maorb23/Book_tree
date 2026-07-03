@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Readwoods — Friends{% endblock %}
+{% block title %}Readwoods - Friends{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/community.css' %}">
@@ -13,17 +13,21 @@
 
   <main class="community-shell">
     <header class="community-header">
-      <h1>Your Connections</h1>
-      <p>Readers you have connected with will appear here.</p>
+      <p class="community-eyebrow">Friends</p>
+      <h1>Your reader circle.</h1>
+      <p>People you have connected with appear here with their tree symbol and reading name.</p>
     </header>
 
     {% if friends %}
       <section class="people-grid">
         {% for entry in friends %}
         <article class="community-card person-card">
-          <div>
-            <div class="person-name">{{ entry.display_name }}</div>
-            <div class="person-meta">@{{ entry.user.username }}</div>
+          <div class="person-header">
+            <div class="person-avatar" aria-hidden="true">{{ entry.avatar_symbol }}</div>
+            <div>
+              <div class="person-name">{{ entry.display_name }}</div>
+              <div class="person-meta">@{{ entry.user.username }}</div>
+            </div>
           </div>
           <span class="pill">Connected</span>
         </article>

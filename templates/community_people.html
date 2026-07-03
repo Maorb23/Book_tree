@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Readwoods — Find People{% endblock %}
+{% block title %}Readwoods - Find People{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/community.css' %}">
@@ -13,8 +13,9 @@
 
   <main class="community-shell">
     <header class="community-header">
-      <h1>Find People</h1>
-      <p>Discover other readers and build your network.</p>
+      <p class="community-eyebrow">People</p>
+      <h1>Find readers by their tree mark.</h1>
+      <p>Discover people in Readwoods and connect around the reading trees they are growing.</p>
     </header>
 
     <section class="community-card form-card">
@@ -23,7 +24,7 @@
           <label for="q">Search by username</label>
           <input id="q" name="q" type="text" value="{{ query }}" placeholder="Search for readers">
         </div>
-        <div style="display:flex; gap:10px; flex-wrap: wrap;">
+        <div class="form-actions">
           <button type="submit" class="btn btn--primary">Search</button>
           <a href="{% url 'tree:community-people' %}" class="btn btn--ghost">Reset</a>
         </div>
@@ -35,10 +36,13 @@
         {% for entry in people %}
         <article class="community-card person-card">
           <div class="person-header">
+            <div class="person-avatar" aria-hidden="true">{{ entry.avatar_symbol }}</div>
             <div>
               <div class="person-name">{{ entry.display_name }}</div>
               <div class="person-meta">@{{ entry.user.username }}</div>
             </div>
+          </div>
+          <div class="person-footer">
             {% if entry.status == 'friend' %}
               <span class="pill">Connected</span>
             {% elif entry.status == 'outgoing' %}
@@ -48,16 +52,16 @@
             {% else %}
               <span class="pill">New</span>
             {% endif %}
-          </div>
 
-          {% if entry.status == 'none' %}
-            <form method="post" action="{% url 'tree:community-send-request' entry.user.id %}">
-              {% csrf_token %}
-              <button type="submit" class="btn btn--primary btn--sm">Connect</button>
-            </form>
-          {% elif entry.status == 'incoming' %}
-            <a href="{% url 'tree:community-requests' %}" class="btn btn--ghost btn--sm">Review request</a>
-          {% endif %}
+            {% if entry.status == 'none' %}
+              <form method="post" action="{% url 'tree:community-send-request' entry.user.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn--primary btn--sm">Connect</button>
+              </form>
+            {% elif entry.status == 'incoming' %}
+              <a href="{% url 'tree:community-requests' %}" class="btn btn--ghost btn--sm">Review request</a>
+            {% endif %}
+          </div>
         </article>
         {% endfor %}
       </section>

@@ -1,0 +1,37 @@
+{% load static %}
+<nav class="nav nav--solid site-nav">
+  <a href="{% url 'tree:landing' %}" class="nav__logo" aria-label="Readwoods home">
+    <span class="site-logo" aria-hidden="true">
+      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
+    </span>
+    <span class="nav__name">Readwoods</span>
+  </a>
+  <div class="nav__links">
+    <div class="nav-menu">
+      <a href="{% url 'tree:community-feed' %}" class="nav-menu__trigger">Community</a>
+      <div class="nav-menu__panel">
+        <a href="{% url 'tree:community-feed' %}">Feed</a>
+        <a href="{% url 'tree:community-people' %}">Find People</a>
+        <a href="{% url 'tree:community-requests' %}">Requests</a>
+        <a href="{% url 'tree:community-friends' %}">Friends</a>
+        <a href="{% url 'tree:community-my-posts' %}">My Posts</a>
+      </div>
+    </div>
+    <a href="{% url 'tree:tree' %}" class="nav__cta nav__tree-link">My Tree</a>
+    <a href="{% url 'tree:stats' %}" class="nav__stats-link">Stats</a>
+    {% if request.user.is_authenticated %}
+      <div class="nav-profile">
+        {% include "partials/user_avatar.html" %}
+        <div class="nav-profile__panel">
+          <a href="{% url 'tree:my-profile' %}">My Profile</a>
+          <a href="{% url 'tree:my-books' %}">My Books</a>
+          <a href="{% url 'tree:challenges' %}">Challenges</a>
+          <a href="{% url 'tree:logout' %}">Logout</a>
+        </div>
+      </div>
+    {% else %}
+      <a href="{% url 'tree:login' %}">Sign In</a>
+      <a href="{% url 'tree:register' %}" class="nav__cta">Create Account</a>
+    {% endif %}
+  </div>
+</nav>

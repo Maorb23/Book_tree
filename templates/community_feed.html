@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Readwoods — Community{% endblock %}
+{% block title %}Readwoods - Community{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/community.css' %}">
@@ -13,19 +13,23 @@
 
   <main class="community-shell">
     <header class="community-header">
-      <h1>Community Feed</h1>
-      <p>See what other readers are growing. Share your progress and discover new branches worth reading.</p>
+      <p class="community-eyebrow">Community</p>
+      <h1>Reader updates from the forest.</h1>
+      <p>Follow what other readers are growing, share progress, and discover branches worth adding to your own tree.</p>
     </header>
 
     {% if posts %}
-      <section class="community-grid">
+      <section class="feed-list" aria-label="Community posts">
         {% for post in posts %}
         <article class="community-card post-card">
-          <div class="community-meta">
-            <span>{{ post.user.profile.display_name|default:post.user.username }}</span>
-            <span>•</span>
-            <span>{{ post.created_at|date:"M d, Y" }}</span>
+          <div class="feed-author">
+            <div class="feed-avatar" aria-hidden="true">{{ post.user.profile.avatar_symbol|default:"🌲" }}</div>
+            <div>
+              <div class="feed-author__name">{{ post.user.profile.display_name|default:post.user.username }}</div>
+              <div class="community-meta">@{{ post.user.username }} · {{ post.created_at|date:"M d, Y" }}</div>
+            </div>
           </div>
+
           <div>
             <h3 class="post-title">{{ post.title }}</h3>
             <p class="post-content">{{ post.content }}</p>
@@ -33,6 +37,7 @@
               <a class="btn btn--ghost btn--sm" href="{% url 'tree:shared-tree' post.user.username post.tree.id %}">View Tree</a>
             {% endif %}
           </div>
+
           <div class="post-footer">
             <div>
               {% if post.progress_status %}
@@ -40,7 +45,7 @@
               {% endif %}
               <span class="pill">{{ post.get_visibility_display }}</span>
             </div>
-            <span>@{{ post.user.username }}</span>
+            <span>{{ post.created_at|timesince }} ago</span>
           </div>
         </article>
         {% endfor %}

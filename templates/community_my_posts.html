@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Readwoods — My Posts{% endblock %}
+{% block title %}Readwoods - My Posts{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/community.css' %}">
@@ -13,23 +13,28 @@
 
   <main class="community-shell">
     <header class="community-header">
-      <h1>My Posts</h1>
-      <p>Your updates are saved here. Share progress as you grow your reading tree.</p>
+      <p class="community-eyebrow">My Posts</p>
+      <h1>Your saved updates.</h1>
+      <p>Review, refine, and manage the reading updates you have shared with the community.</p>
     </header>
 
     {% if posts %}
-      <section class="community-grid">
+      <section class="feed-list">
         {% for post in posts %}
         <article class="community-card post-card">
-          <div class="community-meta">
-            <span>{{ post.created_at|date:"M d, Y" }}</span>
-            <span>•</span>
-            <span>{{ post.get_visibility_display }}</span>
+          <div class="feed-author">
+            <div class="feed-avatar" aria-hidden="true">{{ post.user.profile.avatar_symbol|default:"🌲" }}</div>
+            <div>
+              <div class="feed-author__name">{{ post.user.profile.display_name|default:post.user.username }}</div>
+              <div class="community-meta">{{ post.created_at|date:"M d, Y" }} · {{ post.get_visibility_display }}</div>
+            </div>
           </div>
+
           <div>
             <h3 class="post-title">{{ post.title }}</h3>
             <p class="post-content">{{ post.content }}</p>
           </div>
+
           <div class="post-footer">
             <div>
               {% if post.progress_status %}
@@ -38,6 +43,7 @@
             </div>
             <span>Last updated {{ post.updated_at|date:"M d, Y" }}</span>
           </div>
+
           <div class="post-actions">
             <a class="btn btn--ghost btn--sm" href="{% url 'tree:community-edit-post' post.id %}">Edit</a>
             <form method="post" action="{% url 'tree:community-delete-post' post.id %}" onsubmit="return confirm('Delete this post? This cannot be undone.');">

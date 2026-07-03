@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Readwoods — Requests{% endblock %}
+{% block title %}Readwoods - Requests{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/community.css' %}">
@@ -13,26 +13,30 @@
 
   <main class="community-shell">
     <header class="community-header">
-      <h1>Connection Requests</h1>
-      <p>Accept incoming requests or review the ones you have sent.</p>
+      <p class="community-eyebrow">Requests</p>
+      <h1>Manage reader connections.</h1>
+      <p>Accept incoming requests or review the invitations you have already sent.</p>
     </header>
 
     <section class="community-card">
       <h3>Incoming</h3>
       {% if incoming %}
         <div class="request-list">
-          {% for req in incoming %}
+          {% for row in incoming %}
           <div class="request-row">
-            <div>
-              <strong>{{ req.from_user.profile.display_name|default:req.from_user.username }}</strong>
-              <div class="person-meta">@{{ req.from_user.username }}</div>
+            <div class="request-person">
+              <div class="person-avatar" aria-hidden="true">{{ row.person.avatar_symbol }}</div>
+              <div>
+                <strong>{{ row.person.display_name }}</strong>
+                <div class="person-meta">@{{ row.request.from_user.username }}</div>
+              </div>
             </div>
             <div class="request-actions">
-              <form method="post" action="{% url 'tree:community-accept-request' req.id %}">
+              <form method="post" action="{% url 'tree:community-accept-request' row.request.id %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn--primary btn--sm">Accept</button>
               </form>
-              <form method="post" action="{% url 'tree:community-reject-request' req.id %}">
+              <form method="post" action="{% url 'tree:community-reject-request' row.request.id %}">
                 {% csrf_token %}
                 <button type="submit" class="btn btn--ghost btn--sm">Reject</button>
               </form>
@@ -49,11 +53,14 @@
       <h3>Outgoing</h3>
       {% if outgoing %}
         <div class="request-list">
-          {% for req in outgoing %}
+          {% for row in outgoing %}
           <div class="request-row">
-            <div>
-              <strong>{{ req.to_user.profile.display_name|default:req.to_user.username }}</strong>
-              <div class="person-meta">@{{ req.to_user.username }}</div>
+            <div class="request-person">
+              <div class="person-avatar" aria-hidden="true">{{ row.person.avatar_symbol }}</div>
+              <div>
+                <strong>{{ row.person.display_name }}</strong>
+                <div class="person-meta">@{{ row.request.to_user.username }}</div>
+              </div>
             </div>
             <span class="pill">Pending</span>
           </div>

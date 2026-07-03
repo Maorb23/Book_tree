@@ -170,6 +170,11 @@ def my_profile(request):
     })
 
 
+@login_required
+def stats(request):
+    return render(request, 'stats.html')
+
+
 def _challenge_context(user):
     challenge, _ = ReadingChallenge.objects.get_or_create(user=user, year=2026)
     node_read_books = Node.objects.filter(
@@ -283,6 +288,10 @@ def register_view(request):
     next_url = request.POST.get('next') or request.GET.get('next')
     if request.method == 'POST' and form.is_valid():
         user = form.save()
+        UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'avatar_symbol': _fallback_avatar_symbol(user)},
+        )
         try:
             _send_verification_email(request, user)
         except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
@@ -431,6 +440,21 @@ def _get_display_name(user):
     return user.username
 
 
+def _community_identity(user):
+    profile = getattr(user, 'profile', None)
+    display_name = profile.display_name if profile and profile.display_name else user.username
+    avatar_symbol = profile.avatar_symbol if profile and profile.avatar_symbol else _fallback_avatar_symbol(user)
+    return {
+        'display_name': display_name,
+        'avatar_symbol': avatar_symbol,
+    }
+
+
+def _fallback_avatar_symbol(user):
+    symbols = [choice[0] for choice in UserProfile.AVATAR_CHOICES]
+    return symbols[(user.id or 0) % len(symbols)]
+
+
 def _get_or_create_default_tree(user):
     tree = Tree.objects.filter(user=user, is_default=True).order_by('created_at').first()
     if tree:
@@ -469,7 +493,7 @@ def _tree_query(request):
 @login_required
 def community_feed(request):
     friend_ids = _get_friend_ids(request.user)
-    posts = CommunityPost.objects.select_related('user').filter(
+    posts = CommunityPost.objects.select_related('user', 'user__profile').filter(
         Q(visibility=CommunityPost.VISIBILITY_PUBLIC)
         | Q(user=request.user)
         | Q(visibility=CommunityPost.VISIBILITY_FRIENDS, user_id__in=friend_ids)
@@ -482,7 +506,7 @@ def community_feed(request):
 
 @login_required
 def community_my_posts(request):
-    posts = CommunityPost.objects.filter(user=request.user).order_by('-created_at')
+    posts = CommunityPost.objects.select_related('user', 'user__profile').filter(user=request.user).order_by('-created_at')
     return render(request, 'community_my_posts.html', {
         'posts': posts,
     })
@@ -588,7 +612,7 @@ def community_delete_post(request, post_id):
 @login_required
 def community_people(request):
     query = (request.GET.get('q') or '').strip()
-    users = User.objects.exclude(id=request.user.id)
+    users = User.objects.select_related('profile').exclude(id=request.user.id)
     if query:
         users = users.filter(username__icontains=query)
     users = users.order_by('username')
@@ -620,7 +644,7 @@ def community_people(request):
 
         people.append({
             'user': user,
-            'display_name': _get_display_name(user),
+            **_community_identity(user),
             'status': status_label,
         })
 
@@ -635,26 +659,41 @@ def community_requests(request):
     incoming = FriendRequest.objects.filter(
         to_user=request.user,
         status=FriendRequest.STATUS_PENDING,
-    ).select_related('from_user')
+    ).select_related('from_user', 'from_user__profile')
     outgoing = FriendRequest.objects.filter(
         from_user=request.user,
         status=FriendRequest.STATUS_PENDING,
-    ).select_related('to_user')
+    ).select_related('to_user', 'to_user__profile')
+
+    incoming_rows = [
+        {
+            'request': req,
+            'person': _community_identity(req.from_user),
+        }
+        for req in incoming
+    ]
+    outgoing_rows = [
+        {
+            'request': req,
+            'person': _community_identity(req.to_user),
+        }
+        for req in outgoing
+    ]
 
     return render(request, 'community_requests.html', {
-        'incoming': incoming,
-        'outgoing': outgoing,
+        'incoming': incoming_rows,
+        'outgoing': outgoing_rows,
     })
 
 
 @login_required
 def community_friends(request):
     friend_ids = _get_friend_ids(request.user)
-    friends = User.objects.filter(id__in=friend_ids).order_by('username')
+    friends = User.objects.select_related('profile').filter(id__in=friend_ids).order_by('username')
     friend_cards = [
         {
             'user': friend,
-            'display_name': _get_display_name(friend),
+            **_community_identity(friend),
         }
         for friend in friends
     ]

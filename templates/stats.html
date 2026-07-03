@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - Stats{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/landing.css' %}">
+{% endblock %}
+
+{% block body %}
+{% include "partials/main_nav.html" %}
+
+<main class="profile-page">
+  <section class="profile-panel">
+    <div class="profile-preview" aria-hidden="true">
+      <span>🌲</span>
+    </div>
+    <div class="profile-copy">
+      <p class="section-kicker">Stats</p>
+      <h1>Stats are coming soon.</h1>
+      <p>This page is ready for reading activity, streaks, and tree growth insights.</p>
+    </div>
+  </section>
+</main>
+{% endblock %}

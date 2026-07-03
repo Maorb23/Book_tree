@@ -8,22 +8,7 @@
 {% endblock %}
 
 {% block body %}
-<nav class="nav nav--solid">
-  <a class="nav__logo" href="{% url 'tree:landing' %}">
-    <span class="site-logo" aria-hidden="true">
-      <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
-    </span>
-    <span class="nav__name">Readwoods</span>
-  </a>
-  <div class="nav__links">
-    <a href="{% url 'tree:landing' %}">Home</a>
-    <a href="{% url 'tree:tree' %}">My Tree</a>
-    <a href="{% url 'tree:challenges' %}">Challenges</a>
-    <a href="{% url 'tree:community-feed' %}">Community</a>
-    <a href="{% url 'tree:logout' %}" class="nav__cta">Logout</a>
-    {% include "partials/user_avatar.html" %}
-  </div>
-</nav>
+{% include "partials/main_nav.html" %}
 
 <main class="shelves-page">
   <aside class="shelves-panel">
