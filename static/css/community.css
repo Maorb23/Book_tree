@@ -174,6 +174,7 @@ body {
   color: #21301e;
   padding: 20px;
   box-shadow: 0 18px 42px rgba(5, 10, 6, 0.32);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
 }
 
 .community-card h3 {
@@ -198,6 +199,8 @@ body {
   display: grid;
   place-items: center;
   flex: 0 0 48px;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 50%;
   border: 1px solid rgba(226, 175, 46, 0.42);
   background: radial-gradient(circle at 35% 25%, #fff6cf, #dfe9c8 48%, #486a36 100%);
@@ -350,6 +353,19 @@ body {
 .person-card {
   display: grid;
   gap: 16px;
+  border-color: rgba(135, 169, 118, 0.68);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 251, 0.98), rgba(235, 244, 226, 0.94));
+}
+
+.person-card:hover {
+  border-color: rgba(95, 143, 63, 0.7);
+  box-shadow: 0 22px 46px rgba(5, 10, 6, 0.42);
+  transform: translateY(-4px);
+}
+
+.person-card .person-avatar {
+  box-shadow: 0 10px 20px rgba(38, 68, 31, 0.24);
 }
 
 .person-footer {
@@ -362,13 +378,18 @@ body {
 }
 
 .request-row {
-  padding: 12px 0;
-  border-top: 1px solid rgba(91, 116, 68, 0.16);
+  padding: 14px;
+  border: 1px solid rgba(91, 116, 68, 0.18);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 255, 252, 0.78), rgba(222, 238, 213, 0.48));
+  box-shadow: 0 5px 12px rgba(44, 66, 36, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.request-row:first-child {
-  border-top: 0;
-  padding-top: 2px;
+.request-row:hover {
+  border-color: rgba(95, 143, 63, 0.58);
+  box-shadow: 0 12px 24px rgba(44, 66, 36, 0.14);
+  transform: translateY(-2px);
 }
 
 .empty-state {
