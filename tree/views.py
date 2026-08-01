@@ -25,6 +25,7 @@ from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.utils.encoding import force_str
+from django.utils import timezone
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth import login, logout
@@ -43,6 +44,9 @@ from .models import (
 )
 from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer, BookReviewSerializer
 from .forms import EmailUserCreationForm, UserProfileForm
+from .signup_security import (
+    acquire_rate_limit, get_client_ip, log_rate_limit, verify_turnstile,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -280,42 +284,119 @@ def _best_page_streak(days):
     return best
 
 
+class SignupRateLimited(Exception):
+    def __init__(self, limit_type):
+        self.limit_type = limit_type
+
+
+def _render_register(request, form, next_url, status=200, **context):
+    return render(request, 'register.html', {
+        'form': form,
+        'next_url': next_url,
+        'turnstile_site_key': settings.TURNSTILE_SITE_KEY,
+        **context,
+    }, status=status)
+
+
 def register_view(request):
     if request.user.is_authenticated:
         return redirect('tree:tree')
 
     form = EmailUserCreationForm(request.POST or None)
     next_url = request.POST.get('next') or request.GET.get('next')
-    if request.method == 'POST' and form.is_valid():
-        user = form.save()
-        UserProfile.objects.get_or_create(
-            user=user,
-            defaults={'avatar_symbol': _fallback_avatar_symbol(user)},
-        )
-        try:
-            _send_verification_email(request, user)
-        except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
-            logger.exception('Verification email failed for user_id=%s email=%s', user.id, user.email)
-            user.delete()
-            form.add_error(
-                None,
-                'We could not send the verification email right now. Please check the site email settings or try again later.',
-            )
-            return render(request, 'register.html', {
-                'form': form,
-                'next_url': next_url,
-            })
-        return render(request, 'register.html', {
-            'form': None,
-            'next_url': next_url,
-            'verification_sent': True,
-            'email': user.email,
-        })
+    if request.method != 'POST':
+        return _render_register(request, form, next_url)
 
-    return render(request, 'register.html', {
-        'form': form,
-        'next_url': next_url,
-    })
+    client_ip = get_client_ip(request)
+    attempt = acquire_rate_limit('signup_attempt', client_ip, settings.SIGNUP_ATTEMPT_LIMIT)
+    if not attempt.allowed:
+        log_rate_limit('signup_attempt', client_ip=client_ip)
+        form.add_error(None, 'Too many signup attempts. Please try again later.')
+        return _render_register(request, form, next_url, status=429)
+    attempt.commit()
+
+    turnstile_token = request.POST.get('cf-turnstile-response', '').strip()
+    if not verify_turnstile(turnstile_token, client_ip):
+        form.add_error(None, 'Human verification failed. Please try again.')
+        return _render_register(request, form, next_url, status=403)
+
+    if not form.is_valid():
+        return _render_register(request, form, next_url)
+
+    email = form.cleaned_data['email'].strip().lower()
+    created = acquire_rate_limit('signup_created', client_ip, settings.SIGNUP_CREATED_LIMIT)
+    if not created.allowed:
+        log_rate_limit('signup_created', client_ip=client_ip)
+        form.add_error(None, 'Too many accounts have been created from this network. Please try again later.')
+        return _render_register(request, form, next_url, status=429)
+
+    reservations = [created]
+    try:
+        with transaction.atomic():
+            user = form.save()
+            UserProfile.objects.get_or_create(
+                user=user,
+                defaults={'avatar_symbol': _fallback_avatar_symbol(user)},
+            )
+
+            email_limit = acquire_rate_limit(
+                'verification_email', email, settings.VERIFICATION_EMAIL_LIMIT,
+            )
+            reservations.append(email_limit)
+            if not email_limit.allowed:
+                raise SignupRateLimited('verification_email')
+
+            verification_ip = acquire_rate_limit(
+                'verification_ip', client_ip, settings.VERIFICATION_IP_LIMIT,
+            )
+            reservations.append(verification_ip)
+            if not verification_ip.allowed:
+                raise SignupRateLimited('verification_ip')
+
+            _send_verification_email(request, user)
+    except SignupRateLimited as exc:
+        for reservation in reservations:
+            reservation.rollback()
+        log_rate_limit(exc.limit_type, client_ip=client_ip, email=email)
+        form.add_error(None, 'Too many verification emails have been requested. Please try again later.')
+        return _render_register(request, form, next_url, status=429)
+    except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
+        for reservation in reservations:
+            reservation.rollback()
+        logger.exception(
+            'Verification email failed for user_id=%s email_hash=%s',
+            getattr(locals().get('user'), 'id', '-'),
+            hashlib.sha256(email.encode('utf-8')).hexdigest()[:12],
+        )
+        form.add_error(
+            None,
+            'We could not send the verification email right now. Please check the site email settings or try again later.',
+        )
+        return _render_register(request, form, next_url)
+    except IntegrityError:
+        for reservation in reservations:
+            reservation.rollback()
+        logger.warning(
+            'Signup account creation failed client_ip=%s timestamp=%s',
+            client_ip,
+            timezone.now().isoformat(),
+        )
+        form.add_error(None, 'We could not create that account. Please choose different account details.')
+        return _render_register(request, form, next_url)
+    except Exception:
+        for reservation in reservations:
+            reservation.rollback()
+        raise
+    else:
+        for reservation in reservations:
+            reservation.commit()
+        return _render_register(
+            request,
+            None,
+            next_url,
+            verification_sent=True,
+            email=user.email,
+        )
 
 
 def verify_email_view(request, uidb64, token):
@@ -331,7 +412,11 @@ def verify_email_view(request, uidb64, token):
         try:
             _send_welcome_email(user)
         except (SMTPException, RequestException, OSError, TimeoutError, ValueError):
-            logger.exception('Welcome email failed for user_id=%s email=%s', user.id, user.email)
+            logger.exception(
+                'Welcome email failed for user_id=%s email_hash=%s',
+                user.id,
+                hashlib.sha256(user.email.strip().lower().encode('utf-8')).hexdigest()[:12],
+            )
         login(request, user)
         return render(request, 'login.html', {
             'form': None,

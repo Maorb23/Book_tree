@@ -48,6 +48,12 @@
       {{ form.password2 }}
       {% if form.password2.errors %}<div class="field-error">{{ form.password2.errors }}</div>{% endif %}
 
+      {% if turnstile_site_key %}
+        <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="signup"></div>
+      {% else %}
+        <div class="auth-message auth-message--error">Signup verification is not configured.</div>
+      {% endif %}
+
       <button type="submit" class="btn btn--primary btn--lg auth-submit">Create Account</button>
     </form>
     {% endif %}
@@ -55,4 +61,10 @@
     <p class="auth-meta">Already a member? <a href="{% url 'tree:login' %}">Sign in</a></p>
   </div>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+  {% if form and turnstile_site_key %}
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  {% endif %}
 {% endblock %}

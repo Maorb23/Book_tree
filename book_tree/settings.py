@@ -6,6 +6,8 @@ from pathlib import Path
 from email.utils import formataddr, parseaddr
 from urllib.parse import urlparse
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-book-tree-dev-key-change-in-production')
@@ -62,8 +64,12 @@ railway_public_domain = _env('RAILWAY_PUBLIC_DOMAIN')
 
 if _env('ALLOWED_HOSTS'):
     ALLOWED_HOSTS = _csv_env('ALLOWED_HOSTS')
+elif railway_public_domain:
+    ALLOWED_HOSTS = [railway_public_domain]
+elif DEBUG:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]', 'testserver']
 else:
-    ALLOWED_HOSTS = ['*']
+    raise ImproperlyConfigured('ALLOWED_HOSTS is required when DEBUG=false.')
 if railway_public_domain and railway_public_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(railway_public_domain)
 
@@ -174,6 +180,43 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = _bool_env('CORS_ALLOW_ALL_ORIGINS', 'true')
+
+REDIS_URL = _env('REDIS_URL')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+            'KEY_PREFIX': 'readwoods',
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'readwoods-development',
+        },
+    }
+    if not DEBUG:
+        raise ImproperlyConfigured('REDIS_URL is required when DEBUG=false for shared rate limiting.')
+
+TURNSTILE_SITE_KEY = _env('TURNSTILE_SITE_KEY')
+TURNSTILE_SECRET_KEY = _env('TURNSTILE_SECRET_KEY')
+TURNSTILE_SITEVERIFY_URL = _env(
+    'TURNSTILE_SITEVERIFY_URL',
+    'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+)
+TURNSTILE_TIMEOUT = _int_env('TURNSTILE_TIMEOUT', 10)
+SIGNUP_ATTEMPT_LIMIT = _int_env('SIGNUP_ATTEMPT_LIMIT', 10)
+SIGNUP_CREATED_LIMIT = _int_env('SIGNUP_CREATED_LIMIT', 3)
+VERIFICATION_EMAIL_LIMIT = _int_env('VERIFICATION_EMAIL_LIMIT', 3)
+VERIFICATION_IP_LIMIT = _int_env('VERIFICATION_IP_LIMIT', 10)
+AUTH_RATE_LIMIT_WINDOW_SECONDS = _int_env('AUTH_RATE_LIMIT_WINDOW_SECONDS', 3600)
+TRUST_RAILWAY_PROXY_HEADERS = _bool_env(
+    'TRUST_RAILWAY_PROXY_HEADERS',
+    'true' if _env('RAILWAY_ENVIRONMENT') or _env('RAILWAY_ENVIRONMENT_ID') else 'false',
+)
 
 RESEND_API_KEY = _env('RESEND_API_KEY')
 RESEND_API_URL = _env('RESEND_API_URL', 'https://api.resend.com/emails')

@@ -4,12 +4,14 @@ from django.core import mail
 from django.core.mail import EmailMessage
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from requests import HTTPError
 from unittest.mock import Mock, patch
 from datetime import date, timedelta
 import json
+import time
 
 from .email_backends import ResendEmailBackend
 from .models import (
@@ -21,6 +23,7 @@ from .views import (
     _search_authors_open_library, _search_books_google, _search_books_open_library,
     _google_volume_to_row,
 )
+from .signup_security import acquire_rate_limit, get_client_ip
 from book_tree.settings import _email_env
 
 
@@ -84,13 +87,28 @@ class CommunityModelTests(TestCase):
         self.assertFalse(CommunityPost.objects.filter(id=post.id).exists())
 
 
+@override_settings(
+    TURNSTILE_SITE_KEY='test-site-key',
+    TURNSTILE_SECRET_KEY='test-secret-key',
+)
 class RegistrationVerificationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.siteverify = patch('tree.signup_security.requests.post').start()
+        self.addCleanup(patch.stopall)
+        self.siteverify.return_value.raise_for_status.return_value = None
+        self.siteverify.return_value.json.return_value = {
+            'success': True,
+            'action': 'signup',
+        }
+
     def test_registration_requires_email_verification(self):
         response = self.client.post(reverse('tree:register'), {
             'username': 'new_reader',
             'email': 'reader@example.com',
             'password1': 'A-strong-test-pass-123',
             'password2': 'A-strong-test-pass-123',
+            'cf-turnstile-response': 'valid-token',
         })
 
         self.assertEqual(response.status_code, 200)
@@ -106,6 +124,7 @@ class RegistrationVerificationTests(TestCase):
             'email': 'reader@example.com',
             'password1': 'A-strong-test-pass-123',
             'password2': 'A-strong-test-pass-123',
+            'cf-turnstile-response': 'valid-token',
         })
         verification_url = [
             part for part in mail.outbox[0].body.split()
@@ -129,11 +148,233 @@ class RegistrationVerificationTests(TestCase):
             'email': 'reader@example.com',
             'password1': 'A-strong-test-pass-123',
             'password2': 'A-strong-test-pass-123',
+            'cf-turnstile-response': 'valid-token',
         })
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'We could not send the verification email right now.')
         self.assertFalse(User.objects.filter(username='new_reader').exists())
+
+
+@override_settings(
+    TURNSTILE_SITE_KEY='test-site-key',
+    TURNSTILE_SECRET_KEY='test-secret-key',
+    SIGNUP_ATTEMPT_LIMIT=10,
+    SIGNUP_CREATED_LIMIT=3,
+    VERIFICATION_EMAIL_LIMIT=3,
+    VERIFICATION_IP_LIMIT=10,
+    AUTH_RATE_LIMIT_WINDOW_SECONDS=3600,
+    TRUST_RAILWAY_PROXY_HEADERS=True,
+)
+class SignupProtectionTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.siteverify_patcher = patch('tree.signup_security.requests.post')
+        self.siteverify = self.siteverify_patcher.start()
+        self.addCleanup(self.siteverify_patcher.stop)
+        self.siteverify.return_value.raise_for_status.return_value = None
+        self.siteverify.return_value.json.return_value = {
+            'success': True,
+            'action': 'signup',
+        }
+
+    def signup_data(self, number=1, email=None):
+        return {
+            'username': f'protected_reader_{number}',
+            'email': email or f'reader{number}@example.com',
+            'password1': 'A-strong-test-pass-123',
+            'password2': 'A-strong-test-pass-123',
+            'cf-turnstile-response': f'valid-token-{number}',
+        }
+
+    def test_valid_turnstile_signup_succeeds(self):
+        response = self.client.post(
+            reverse('tree:register'),
+            self.signup_data(),
+            REMOTE_ADDR='10.0.0.10',
+            HTTP_X_REAL_IP='203.0.113.10',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(User.objects.filter(username='protected_reader_1').exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.siteverify.assert_called_once_with(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            data={
+                'secret': 'test-secret-key',
+                'response': 'valid-token-1',
+                'remoteip': '203.0.113.10',
+            },
+            timeout=10,
+        )
+
+    def test_secret_key_is_not_rendered_in_signup_page(self):
+        response = self.client.get(reverse('tree:register'))
+
+        self.assertContains(response, 'test-site-key')
+        self.assertNotContains(response, 'test-secret-key')
+
+    def test_missing_turnstile_token_is_rejected(self):
+        data = self.signup_data()
+        data.pop('cf-turnstile-response')
+
+        response = self.client.post(reverse('tree:register'), data)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='protected_reader_1').exists())
+        self.siteverify.assert_not_called()
+
+    def test_invalid_turnstile_response_is_rejected(self):
+        self.siteverify.return_value.json.return_value = {
+            'success': False,
+            'error-codes': ['invalid-input-response'],
+        }
+
+        response = self.client.post(reverse('tree:register'), self.signup_data())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='protected_reader_1').exists())
+
+    def test_malformed_turnstile_response_is_rejected(self):
+        self.siteverify.return_value.json.return_value = ['unexpected']
+
+        response = self.client.post(reverse('tree:register'), self.signup_data())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='protected_reader_1').exists())
+
+    def test_turnstile_action_mismatch_is_rejected(self):
+        self.siteverify.return_value.json.return_value = {
+            'success': True,
+            'action': 'different-action',
+        }
+
+        response = self.client.post(reverse('tree:register'), self.signup_data())
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(User.objects.filter(username='protected_reader_1').exists())
+
+    def test_more_than_ten_signup_attempts_from_one_ip_is_blocked(self):
+        for number in range(1, 11):
+            data = self.signup_data(number)
+            data['password2'] = 'does-not-match'
+            response = self.client.post(reverse('tree:register'), data, REMOTE_ADDR='203.0.113.20')
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            reverse('tree:register'), self.signup_data(11), REMOTE_ADDR='203.0.113.20',
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(self.siteverify.call_count, 10)
+
+    def test_more_than_three_created_accounts_from_one_ip_is_blocked(self):
+        for number in range(1, 4):
+            response = self.client.post(
+                reverse('tree:register'), self.signup_data(number), REMOTE_ADDR='203.0.113.30',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            reverse('tree:register'), self.signup_data(4), REMOTE_ADDR='203.0.113.30',
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(User.objects.filter(username__startswith='protected_reader_').count(), 3)
+
+    @override_settings(SIGNUP_CREATED_LIMIT=10)
+    def test_more_than_three_verification_emails_for_one_email_is_blocked(self):
+        normalized_email = 'reader@example.com'
+        for number in range(1, 4):
+            response = self.client.post(
+                reverse('tree:register'),
+                self.signup_data(number, email=f'  {normalized_email.upper()}  '),
+                REMOTE_ADDR='203.0.113.40',
+            )
+            self.assertEqual(response.status_code, 200)
+            User.objects.get(username=f'protected_reader_{number}').delete()
+
+        response = self.client.post(
+            reverse('tree:register'),
+            self.signup_data(4, email=normalized_email),
+            REMOTE_ADDR='203.0.113.40',
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertFalse(User.objects.filter(username='protected_reader_4').exists())
+        self.assertEqual(len(mail.outbox), 3)
+
+    @override_settings(
+        SIGNUP_ATTEMPT_LIMIT=20,
+        SIGNUP_CREATED_LIMIT=20,
+        VERIFICATION_EMAIL_LIMIT=20,
+    )
+    def test_more_than_ten_verification_emails_from_one_ip_is_blocked(self):
+        for number in range(1, 11):
+            response = self.client.post(
+                reverse('tree:register'), self.signup_data(number), REMOTE_ADDR='203.0.113.50',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            reverse('tree:register'), self.signup_data(11), REMOTE_ADDR='203.0.113.50',
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(User.objects.filter(username__startswith='protected_reader_').count(), 10)
+        self.assertEqual(len(mail.outbox), 10)
+
+    @override_settings(AUTH_RATE_LIMIT_WINDOW_SECONDS=1)
+    def test_rate_limit_counter_expires_after_window(self):
+        first = acquire_rate_limit('signup_attempt', '203.0.113.60', 1)
+        first.commit()
+        blocked = acquire_rate_limit('signup_attempt', '203.0.113.60', 1)
+        self.assertFalse(blocked.allowed)
+
+        time.sleep(1.05)
+
+        reset = acquire_rate_limit('signup_attempt', '203.0.113.60', 1)
+        self.assertTrue(reset.allowed)
+        reset.rollback()
+
+    def test_failed_account_creation_does_not_consume_created_limit(self):
+        with patch('tree.views.EmailUserCreationForm.save', side_effect=IntegrityError('race')):
+            failed = self.client.post(
+                reverse('tree:register'), self.signup_data(99), REMOTE_ADDR='203.0.113.70',
+            )
+        self.assertEqual(failed.status_code, 200)
+
+        for number in range(1, 4):
+            response = self.client.post(
+                reverse('tree:register'), self.signup_data(number), REMOTE_ADDR='203.0.113.70',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        blocked = self.client.post(
+            reverse('tree:register'), self.signup_data(4), REMOTE_ADDR='203.0.113.70',
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+    def test_client_ip_ignores_x_forwarded_for(self):
+        request = Mock()
+        request.META = {
+            'HTTP_X_REAL_IP': '198.51.100.9',
+            'HTTP_X_FORWARDED_FOR': '192.0.2.99',
+            'REMOTE_ADDR': '10.0.0.4',
+        }
+
+        self.assertEqual(get_client_ip(request), '198.51.100.9')
+
+    @override_settings(TRUST_RAILWAY_PROXY_HEADERS=False)
+    def test_client_ip_ignores_proxy_headers_when_proxy_is_not_trusted(self):
+        request = Mock()
+        request.META = {
+            'HTTP_X_REAL_IP': '198.51.100.9',
+            'HTTP_X_FORWARDED_FOR': '192.0.2.99',
+            'REMOTE_ADDR': '10.0.0.4',
+        }
+
+        self.assertEqual(get_client_ip(request), '10.0.0.4')
 
 
 class ResendEmailBackendTests(SimpleTestCase):

@@ -110,9 +110,38 @@ Open:
 - `SECRET_KEY` (required in production)
 - `DEBUG` (default: `true`)
 - `ALLOWED_HOSTS` (comma-separated, e.g. `readwoods.onrender.com`)
-- `DATABASE_URL` (PostgreSQL connection string for Render)
+- `DATABASE_URL` (PostgreSQL connection string)
 - `DB_SSL` (default: `true` for PostgreSQL)
 - `CORS_ALLOW_ALL_ORIGINS` (default: `true`)
+- `TURNSTILE_SITE_KEY` (public Cloudflare Turnstile widget site key)
+- `TURNSTILE_SECRET_KEY` (private Cloudflare Turnstile secret; backend only)
+- `REDIS_URL` (shared Redis connection URL; required when `DEBUG=false`)
+- `SIGNUP_ATTEMPT_LIMIT` (default: `10` per IP/window)
+- `SIGNUP_CREATED_LIMIT` (default: `3` per IP/window)
+- `VERIFICATION_EMAIL_LIMIT` (default: `3` per normalized email/window)
+- `VERIFICATION_IP_LIMIT` (default: `10` per IP/window)
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS` (default: `3600`)
+- `TRUST_RAILWAY_PROXY_HEADERS` (defaults to `true` when Railway environment variables are present; trusts Railway's `X-Real-IP` header)
+
+For a Railway production deployment, provision a Redis service and reference its
+`REDIS_URL` from the web service. Configure Turnstile and the rate limits in the
+Railway Variables tab, for example:
+
+```env
+TURNSTILE_SITE_KEY=
+TURNSTILE_SECRET_KEY=
+REDIS_URL=${{Redis.REDIS_URL}}
+SIGNUP_ATTEMPT_LIMIT=10
+SIGNUP_CREATED_LIMIT=3
+VERIFICATION_EMAIL_LIMIT=3
+VERIFICATION_IP_LIMIT=10
+AUTH_RATE_LIMIT_WINDOW_SECONDS=3600
+```
+
+Do not place `TURNSTILE_SECRET_KEY` in templates, JavaScript, or any variable
+that is exposed to browser code. Local development uses Django's in-process
+cache when `REDIS_URL` is absent; production intentionally fails to start
+without Redis so rate limits remain shared across replicas and restarts.
 
 ## Render / PostgreSQL notes
 
