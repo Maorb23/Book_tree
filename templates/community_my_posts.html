@@ -23,7 +23,7 @@
         {% for post in posts %}
         <article class="community-card post-card">
           <div class="feed-author">
-            <div class="feed-avatar" aria-hidden="true">{{ post.user.profile.avatar_symbol|default:"🌲" }}</div>
+            <div class="feed-avatar" aria-hidden="true">{% if post.user.profile.avatar_url %}<img src="{{ post.user.profile.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}{{ post.user.profile.avatar_symbol|default:"🌲" }}{% endif %}</div>
             <div>
               <div class="feed-author__name">{{ post.user.profile.display_name|default:post.user.username }}</div>
               <div class="community-meta">{{ post.created_at|date:"M d, Y" }} · {{ post.get_visibility_display }}</div>

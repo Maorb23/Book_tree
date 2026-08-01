@@ -25,7 +25,7 @@
           {% for row in incoming %}
           <div class="request-row">
             <div class="request-person">
-              <div class="person-avatar" aria-hidden="true">{{ row.person.avatar_symbol }}</div>
+              <div class="person-avatar" aria-hidden="true">{% if row.person.avatar_url %}<img src="{{ row.person.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}{{ row.person.avatar_symbol }}{% endif %}</div>
               <div>
                 <strong>{{ row.person.display_name }}</strong>
                 <div class="person-meta">@{{ row.request.from_user.username }}</div>
@@ -56,7 +56,7 @@
           {% for row in outgoing %}
           <div class="request-row">
             <div class="request-person">
-              <div class="person-avatar" aria-hidden="true">{{ row.person.avatar_symbol }}</div>
+              <div class="person-avatar" aria-hidden="true">{% if row.person.avatar_url %}<img src="{{ row.person.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}{{ row.person.avatar_symbol }}{% endif %}</div>
               <div>
                 <strong>{{ row.person.display_name }}</strong>
                 <div class="person-meta">@{{ row.request.to_user.username }}</div>

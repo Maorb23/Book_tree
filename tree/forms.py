@@ -33,7 +33,7 @@ class EmailUserCreationForm(UserCreationForm):
 class UserProfileForm(forms.ModelForm):
     class Meta:
         model = UserProfile
-        fields = ('display_name', 'bio', 'avatar_symbol')
+        fields = ('display_name', 'bio', 'avatar_url', 'avatar_symbol')
         widgets = {
             'display_name': forms.TextInput(attrs={
                 'placeholder': 'Your reading name',
@@ -42,6 +42,9 @@ class UserProfileForm(forms.ModelForm):
             'bio': forms.Textarea(attrs={
                 'placeholder': 'A short note about your reading forest',
                 'rows': 4,
+            }),
+            'avatar_url': forms.URLInput(attrs={
+                'placeholder': 'https://example.com/your-photo.jpg',
             }),
             'avatar_symbol': forms.RadioSelect,
         }

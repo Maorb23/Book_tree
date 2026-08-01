@@ -20,11 +20,45 @@ from .models import (
 )
 from .views import (
     _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books,
-    _search_authors_open_library, _search_books_google, _search_books_open_library,
+    _get_landing_recommendations, _search_authors_open_library, _search_books_google, _search_books_open_library,
     _google_volume_to_row,
 )
 from .signup_security import acquire_rate_limit, get_client_ip
 from book_tree.settings import _email_env
+
+
+class LandingRecommendationsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='landing_reader', password='pass1234')
+
+    def test_landing_books_are_the_newest_tree_and_library_additions(self):
+        tree_book = Node.objects.create(
+            user=self.user,
+            title='A tree book',
+            node_type='book',
+            author='Tree Author',
+        )
+        imported_book = ImportedBook.objects.create(
+            user=self.user,
+            title='A library book',
+            author='Library Author',
+        )
+        Node.objects.create(
+            user=self.user,
+            title='Library shadow',
+            node_type='book',
+            style={'library_shadow': True},
+        )
+
+        recommendations = _get_landing_recommendations()
+
+        self.assertEqual([book['title'] for book in recommendations[:2]], [
+            imported_book.title,
+            tree_book.title,
+        ])
+        self.assertEqual(recommendations[0]['genre'], 'Added to My Books')
+        self.assertEqual(recommendations[1]['genre'], 'Added to a tree')
+        self.assertNotIn('Library shadow', [book['title'] for book in recommendations])
 
 
 class CommunityModelTests(TestCase):

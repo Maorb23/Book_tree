@@ -37,8 +37,9 @@
 
 <section class="recommendations">
   <div class="recommendations__inner">
-    <h2 class="section-title">Colorful picks from the community</h2>
-    <div class="book-strip" aria-label="Recommended books">
+    <h2 class="section-title">Recently added to Readwoods</h2>
+    <p class="section-sub recommendations__sub">The latest books readers have added to their trees and My Books shelves.</p>
+    <div class="book-strip" aria-label="Recently added books">
       {% for rec in recommended_books %}
       <a class="book-link" href="{% url 'tree:book' %}?title={{ rec.title|urlencode }}{% if rec.author %}&author={{ rec.author|urlencode }}{% endif %}{% if rec.isbn %}&isbn={{ rec.isbn|urlencode }}{% endif %}{% if rec.genre %}&genre={{ rec.genre|urlencode }}{% endif %}{% if rec.year %}&year={{ rec.year|urlencode }}{% endif %}{% if rec.cover_url %}&cover={{ rec.cover_url|urlencode }}{% endif %}{% if rec.description %}&description={{ rec.description|urlencode }}{% endif %}" aria-label="Open {{ rec.title }} details">
         <article class="book-card {{ rec.tone }} {% if rec.cover_url %}book-card--with-cover{% endif %}" {% if rec.cover_url %}style="--book-cover: url('{{ rec.cover_url|escape }}');"{% endif %}>
@@ -54,8 +55,8 @@
       <article class="book-card book-card--blue">
         <span class="book-card__cover" aria-hidden="true"></span>
         <span class="book-card__content">
-          <span class="book-card__meta">Recommendations</span>
-          <span class="book-card__title">Add books to your tree to power community picks</span>
+          <span class="book-card__meta">Your reading list</span>
+          <span class="book-card__title">Add a book to your tree or My Books to see it here</span>
         </span>
       </article>
       {% endfor %}
@@ -101,24 +102,28 @@
   </div>
 </section>
 
-<section class="community" id="community">
-  <div class="community__inner">
-    <div class="community__head">
-      <h2 class="section-title">People are sharing trees right now</h2>
+<section class="next-steps" id="community">
+  <div class="next-steps__inner">
+    <div class="next-steps__head">
+      <p class="section-kicker">Make it yours</p>
+      <h2 class="section-title">A better way to keep your reading moving.</h2>
     </div>
-    <div class="community__grid">
-      <article class="share-card">
-        <div class="share-card__user"><span class="avatar avatar--a">A</span> <strong>Arielle</strong> shared a new Fantasy branch</div>
-        <p>"Added 4 epic fantasy books and ranked my top 2 this month."</p>
-      </article>
-      <article class="share-card">
-        <div class="share-card__user"><span class="avatar avatar--b">M</span> <strong>Max</strong> posted a Sci-Fi mini tree</div>
-        <p>"My AI and space recommendations if you like fast reads."</p>
-      </article>
-      <article class="share-card">
-        <div class="share-card__user"><span class="avatar avatar--c">N</span> <strong>Noa</strong> reviewed this week's pick</div>
-        <p>"Short review + branch notes on a modern classic."</p>
-      </article>
+    <div class="next-steps__grid">
+      <a class="next-step" href="{% url 'tree:my-books' %}">
+        <span class="next-step__number">01</span>
+        <h3>Save your next read</h3>
+        <p>Keep every book you want, are reading, or have finished in one place.</p>
+      </a>
+      <a class="next-step" href="{% url 'tree:tree' %}">
+        <span class="next-step__number">02</span>
+        <h3>Grow the connections</h3>
+        <p>Arrange books by author, genre, series, and the paths that matter to you.</p>
+      </a>
+      <a class="next-step" href="{% url 'tree:challenges' %}">
+        <span class="next-step__number">03</span>
+        <h3>Keep your momentum</h3>
+        <p>Set a reading goal and track the habits behind your growing library.</p>
+      </a>
     </div>
   </div>
 </section>

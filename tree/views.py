@@ -7,7 +7,6 @@ import uuid
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
-import random
 import re
 from smtplib import SMTPException
 from requests import RequestException
@@ -532,6 +531,7 @@ def _community_identity(user):
     return {
         'display_name': display_name,
         'avatar_symbol': avatar_symbol,
+        'avatar_url': profile.avatar_url if profile and profile.avatar_url else '',
     }
 
 
@@ -3134,11 +3134,6 @@ def _open_library_cover_url(isbn):
 
 
 def _get_landing_recommendations(limit=6):
-    cache_key = f'landing:recommendations:v3:{limit}'
-    cached = cache.get(cache_key)
-    if cached:
-        return cached
-
     tone_classes = [
         'book-card--gold',
         'book-card--teal',
@@ -3148,16 +3143,31 @@ def _get_landing_recommendations(limit=6):
         'book-card--green',
     ]
 
-    curated = _curated_landing_books()
-    random.shuffle(curated)
-    picks = curated[:limit]
+    tree_books = [
+        book for book in Node.objects.filter(node_type='book').order_by('-date_added')
+        if not _is_library_shadow(book)
+    ][:limit]
+    my_books = list(ImportedBook.objects.all().order_by('-date_added')[:limit])
+    newest_books = sorted(
+        tree_books + my_books,
+        key=lambda book: book.date_added,
+        reverse=True,
+    )[:limit]
 
-    for idx, book in enumerate(picks):
-        book['tone'] = tone_classes[idx % len(tone_classes)]
-
-    final_picks = picks[:limit]
-    cache.set(cache_key, final_picks, timeout=60 * 10)
-    return final_picks
+    picks = []
+    for index, book in enumerate(newest_books):
+        is_tree_book = isinstance(book, Node)
+        picks.append({
+            'title': book.title,
+            'author': book.author,
+            'genre': book.genre if is_tree_book and book.genre else ('Added to a tree' if is_tree_book else 'Added to My Books'),
+            'isbn': book.isbn,
+            'year': book.year,
+            'description': book.description if is_tree_book else book.notes,
+            'cover_url': book.get_cover_url(),
+            'tone': tone_classes[index % len(tone_classes)],
+        })
+    return picks
 
 
 def _curated_landing_books():

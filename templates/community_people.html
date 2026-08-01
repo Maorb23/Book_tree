@@ -36,7 +36,7 @@
         {% for entry in people %}
         <article class="community-card person-card">
           <div class="person-header">
-            <div class="person-avatar" aria-hidden="true">{{ entry.avatar_symbol }}</div>
+            <div class="person-avatar" aria-hidden="true">{% if entry.avatar_url %}<img src="{{ entry.avatar_url }}" alt="" referrerpolicy="no-referrer">{% else %}{{ entry.avatar_symbol }}{% endif %}</div>
             <div>
               <div class="person-name">{{ entry.display_name }}</div>
               <div class="person-meta">@{{ entry.user.username }}</div>

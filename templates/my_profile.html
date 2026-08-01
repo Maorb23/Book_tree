@@ -13,7 +13,11 @@
 <main class="profile-page">
   <section class="profile-panel">
     <div class="profile-preview" aria-hidden="true">
-      <span>{{ profile.avatar_symbol }}</span>
+      {% if profile.avatar_url %}
+        <img src="{{ profile.avatar_url }}" alt="" referrerpolicy="no-referrer">
+      {% else %}
+        <span>{{ profile.avatar_symbol }}</span>
+      {% endif %}
     </div>
     <div class="profile-copy">
       <p class="section-kicker">My Profile</p>
@@ -42,6 +46,14 @@
     </label>
     {% if form.bio.errors %}
       <div class="field-error">{{ form.bio.errors|join:", " }}</div>
+    {% endif %}
+
+    <label>
+      Profile photo URL <span class="field-optional">(optional)</span>
+      {{ form.avatar_url }}
+    </label>
+    {% if form.avatar_url.errors %}
+      <div class="field-error">{{ form.avatar_url.errors|join:", " }}</div>
     {% endif %}
 
     <fieldset class="avatar-picker">
