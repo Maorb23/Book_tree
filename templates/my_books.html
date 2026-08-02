@@ -176,6 +176,7 @@
             <input class="custom-shelf-input" type="text" value="{{ book.custom_shelf }}" placeholder="Custom shelf">
             <button class="btn btn--ghost btn--sm save-book-shelf">Save To Shelf</button>
             <button class="btn btn--ghost btn--sm add-book-review" type="button">{% if book.user_review %}Edit Review{% else %}Add Review{% endif %}</button>
+            <button class="btn btn--danger btn--sm delete-library-book" type="button">Delete Book</button>
             <div class="reading-update" {% if book.shelf != "currently_reading" %}hidden{% endif %}>
               <div class="reading-update__head">
                 <div>

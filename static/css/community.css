@@ -135,10 +135,11 @@ body {
 
 .community-eyebrow {
   color: #e2af2e;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  line-height: 1.35;
 }
 
 .community-header h1 {

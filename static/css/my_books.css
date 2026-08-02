@@ -602,6 +602,10 @@ body {
   gap: 8px;
 }
 
+.delete-library-book {
+  justify-content: center;
+}
+
 .reading-update {
   display: grid;
   gap: 12px;

@@ -237,6 +237,42 @@
     }
   });
 
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('.delete-library-book');
+    if (!button) return;
+    const card = button.closest('.library-book');
+    if (!card) return;
+
+    const title = card.querySelector('h3')?.textContent?.trim() || 'this book';
+    const source = card.dataset.source;
+    const endpoint = source === 'imported'
+      ? `/api/imported-books/${encodeURIComponent(card.dataset.id)}/`
+      : `/api/nodes/${encodeURIComponent(card.dataset.id)}/`;
+    const warning = source === 'tree'
+      ? `Delete "${title}"? This will also remove it from your tree.`
+      : `Delete "${title}" from My Books?`;
+    if (!window.confirm(warning)) return;
+
+    button.disabled = true;
+    button.textContent = 'Deleting...';
+    try {
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': getCsrf() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Could not delete this book.');
+      }
+      showToast('Book deleted.');
+      window.location.reload();
+    } catch (error) {
+      showToast(error.message || 'Could not delete this book.');
+      button.disabled = false;
+      button.textContent = 'Delete Book';
+    }
+  });
+
   document.addEventListener('click', event => {
     const button = event.target.closest('.read-review-more');
     if (!button) return;

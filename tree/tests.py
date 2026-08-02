@@ -896,6 +896,31 @@ class GoodreadsImportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(f'imported_book={imported_book.id}', response.content.decode())
 
+    def test_my_books_renders_delete_controls_for_imported_and_tree_books(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        ImportedBook.objects.create(user=self.user, title='Imported Book', author='Author One')
+        Node.objects.create(user=self.user, tree=tree, title='Tree Book', author='Author Two', node_type='book')
+
+        response = self.client.get(reverse('tree:my-books'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="btn btn--danger btn--sm delete-library-book"', count=2)
+        self.assertContains(response, 'data-source="imported"', count=1)
+        self.assertContains(response, 'data-source="tree"', count=1)
+
+    def test_library_delete_endpoints_remove_only_the_signed_in_users_books(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        imported_book = ImportedBook.objects.create(user=self.user, title='Imported Book')
+        tree_book = Node.objects.create(user=self.user, tree=tree, title='Tree Book', node_type='book')
+
+        imported_response = self.client.delete(reverse('tree:api-imported-book-detail', args=[imported_book.id]))
+        tree_response = self.client.delete(reverse('tree:api-node-detail', args=[tree_book.id]))
+
+        self.assertEqual(imported_response.status_code, 204)
+        self.assertEqual(tree_response.status_code, 204)
+        self.assertFalse(ImportedBook.objects.filter(id=imported_book.id).exists())
+        self.assertFalse(Node.objects.filter(id=tree_book.id).exists())
+
     def test_friends_can_view_friend_visible_shared_tree(self):
         friend = User.objects.create_user(username='friend', password='pass1234')
         Friendship.objects.create(user_a=self.user, user_b=friend)
