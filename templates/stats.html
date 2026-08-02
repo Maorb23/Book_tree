@@ -16,10 +16,22 @@
       <span>🌲</span>
     </div>
     <div class="profile-copy">
-      <p class="section-kicker">Stats</p>
-      <h1>Stats are coming soon.</h1>
-      <p>This page is ready for reading activity, streaks, and tree growth insights.</p>
+      <h1>Your Reading Stats</h1>
+      <p>A simple overview of the reading activity you have recorded in Readwoods.</p>
     </div>
+  </section>
+
+  <section class="stats-grid" aria-label="Reading statistics">
+    <article class="stat-card">
+      <span class="stat-card__value">{{ average_pages }}</span>
+      <h2>Average pages per reading day</h2>
+      <p>Based on pages logged from My Books across {{ reading_days }} unique day{{ reading_days|pluralize }}.</p>
+    </article>
+    <article class="stat-card">
+      <span class="stat-card__value">{{ login_days }}</span>
+      <h2>Days logged in</h2>
+      <p>The number of unique days you have signed in to Readwoods.</p>
+    </article>
   </section>
 </main>
 {% endblock %}

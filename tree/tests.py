@@ -16,7 +16,7 @@ import time
 from .email_backends import ResendEmailBackend
 from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook, BookReview,
-    Tree, TreeVersion, ReadingChallenge, DailyPageLog,
+    Tree, TreeVersion, ReadingChallenge, DailyPageLog, UserLoginDay,
 )
 from .views import (
     _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books,
@@ -445,6 +445,48 @@ class ResendEmailBackendTests(SimpleTestCase):
             },
             timeout=10,
         )
+
+
+class LoginBadgesAndStatsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='stats_reader', password='pass1234')
+
+    def test_repeated_logins_on_one_day_create_one_login_day(self):
+        self.assertTrue(self.client.login(username='stats_reader', password='pass1234'))
+        self.client.logout()
+        self.assertTrue(self.client.login(username='stats_reader', password='pass1234'))
+
+        self.assertEqual(UserLoginDay.objects.filter(user=self.user).count(), 1)
+
+    def test_badges_page_marks_login_milestones_as_earned(self):
+        for offset in range(5):
+            UserLoginDay.objects.create(user=self.user, login_date=date.today() - timedelta(days=offset))
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:badges'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['login_days'], 5)
+        self.assertContains(response, 'First Visit')
+        self.assertContains(response, 'Returning Reader')
+        self.assertContains(response, 'Earned', count=2)
+
+    def test_stats_average_uses_total_pages_per_unique_reading_day(self):
+        self.client.force_login(self.user)
+        for pages, offset in ((20, 0), (30, 0), (100, 1)):
+            DailyPageLog.objects.create(
+                user=self.user,
+                book_title='Dune',
+                pages=pages,
+                log_date=date.today() - timedelta(days=offset),
+            )
+
+        response = self.client.get(reverse('tree:stats'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['average_pages'], 75)
+        self.assertEqual(response.context['reading_days'], 2)
+        self.assertContains(response, 'Average pages per reading day')
 
 
 class EmailSettingsTests(SimpleTestCase):

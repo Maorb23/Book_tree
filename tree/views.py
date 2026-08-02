@@ -50,6 +50,15 @@ from .signup_security import (
 
 logger = logging.getLogger(__name__)
 AUTO_TREE_MAX_BOOKS = 15
+LOGIN_BADGE_MILESTONES = (
+    (1, 'First Visit', '🌱'),
+    (5, 'Returning Reader', '📖'),
+    (10, 'Growing Habit', '🌿'),
+    (25, 'Rooted Reader', '🌳'),
+    (50, 'Woodland Regular', '🏅'),
+    (100, 'Dedicated Reader', '🏆'),
+    (365, 'Year in the Woods', '✨'),
+)
 
 
 # ──────────────────────────────────────────────
@@ -175,7 +184,37 @@ def my_profile(request):
 
 @login_required
 def stats(request):
-    return render(request, 'stats.html')
+    page_totals = DailyPageLog.objects.filter(user=request.user).aggregate(
+        total_pages=Sum('pages'),
+        reading_days=Count('log_date', distinct=True),
+    )
+    total_pages = page_totals['total_pages'] or 0
+    reading_days = page_totals['reading_days'] or 0
+    average_pages = round(total_pages / reading_days) if reading_days else 0
+    return render(request, 'stats.html', {
+        'average_pages': average_pages,
+        'reading_days': reading_days,
+        'login_days': request.user.login_days.count(),
+    })
+
+
+@login_required
+def badges(request):
+    login_days = request.user.login_days.count()
+    badge_rows = [
+        {
+            'days': days,
+            'name': name,
+            'icon': icon,
+            'earned': login_days >= days,
+        }
+        for days, name, icon in LOGIN_BADGE_MILESTONES
+    ]
+    return render(request, 'badges.html', {
+        'badges': badge_rows,
+        'login_days': login_days,
+        'earned_count': sum(badge['earned'] for badge in badge_rows),
+    })
 
 
 def _challenge_context(user):

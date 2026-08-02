@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - Badges{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/landing.css' %}">
+{% endblock %}
+
+{% block body %}
+{% include "partials/main_nav.html" %}
+
+<main class="profile-page">
+  <section class="profile-panel">
+    <div class="profile-preview" aria-hidden="true"><span>🏅</span></div>
+    <div class="profile-copy">
+      <h1>Your Badges</h1>
+      <p>You have earned {{ earned_count }} badge{{ earned_count|pluralize }} across {{ login_days }} unique login day{{ login_days|pluralize }}.</p>
+    </div>
+  </section>
+
+  <section class="badge-grid" aria-label="Login badges">
+    {% for badge in badges %}
+      <article class="badge-card{% if badge.earned %} badge-card--earned{% endif %}">
+        <span class="badge-card__icon" aria-hidden="true">{{ badge.icon }}</span>
+        <div>
+          <h2>{{ badge.name }}</h2>
+          <p>{{ badge.days }} unique login day{{ badge.days|pluralize }}</p>
+        </div>
+        <span class="badge-card__status">{% if badge.earned %}Earned{% else %}Locked{% endif %}</span>
+      </article>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

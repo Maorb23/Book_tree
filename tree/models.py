@@ -311,6 +311,20 @@ class UserProfile(models.Model):
         return self.display_name or self.user.username
 
 
+class UserLoginDay(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_days')
+    login_date = models.DateField()
+
+    class Meta:
+        ordering = ['-login_date']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'login_date'], name='unique_user_login_day'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.login_date}"
+
+
 class FriendRequest(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_ACCEPTED = 'accepted'
