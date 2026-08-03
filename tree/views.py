@@ -1038,6 +1038,7 @@ def node_list(request):
     serializer = NodeSerializer(data=payload, context={'request': request})
     if serializer.is_valid():
         node = serializer.save(user=request.user, tree=tree)
+        _sync_timeline_node_style(node)
         # Auto-fetch cover if not supplied
         if node.node_type != 'book':
             pass
@@ -1071,7 +1072,8 @@ def node_detail(request, pk):
                                     partial=(request.method == 'PATCH'),
                                     context={'request': request})
         if serializer.is_valid():
-            serializer.save()
+            node = serializer.save()
+            _sync_timeline_node_style(node)
             _invalidate_tree_cache(request.user.id, node.tree_id)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1079,6 +1081,48 @@ def node_detail(request, pk):
     node.delete()
     _invalidate_tree_cache(request.user.id, node.tree_id)
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _sync_timeline_node_style(node):
+    """Keep manually created or reparented nodes attached to their year group."""
+    if not node.tree_id or node.tree.layout_mode != Tree.LAYOUT_TIMELINE:
+        return
+
+    style = dict(node.style or {})
+    changed = False
+    if node.node_type == 'year':
+        if not isinstance(style.get('timeline_group'), int):
+            groups = [
+                (candidate.style or {}).get('timeline_group')
+                for candidate in Node.objects.filter(tree=node.tree, node_type='year').exclude(pk=node.pk)
+                if isinstance((candidate.style or {}).get('timeline_group'), int)
+            ]
+            style['timeline_group'] = max(groups, default=-1) + 1
+            changed = True
+        if style.get('timeline_role') != 'year':
+            style['timeline_role'] = 'year'
+            changed = True
+    elif node.parent_id and node.parent.node_type == 'year':
+        parent_style = dict(node.parent.style or {})
+        group = parent_style.get('timeline_group')
+        if not isinstance(group, int):
+            _sync_timeline_node_style(node.parent)
+            node.parent.refresh_from_db(fields=['style'])
+            group = (node.parent.style or {}).get('timeline_group')
+        role = 'book' if node.node_type == 'book' else 'other'
+        if style.get('timeline_group') != group:
+            style['timeline_group'] = group
+            changed = True
+        if style.get('timeline_role') != role:
+            style['timeline_role'] = role
+            changed = True
+        if not isinstance(style.get('timeline_order'), int):
+            style['timeline_order'] = Node.objects.filter(parent=node.parent).exclude(pk=node.pk).count()
+            changed = True
+
+    if changed:
+        node.style = style
+        node.save(update_fields=['style'])
 
 
 @api_view(['GET', 'POST'])

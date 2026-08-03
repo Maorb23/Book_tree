@@ -2744,8 +2744,20 @@
       const groupGap = NODE_W * 2 + 220;
       const bookGap = NODE_H + 56;
       const groups = new Map();
+      const timelineGroupFor = node => {
+        let current = node;
+        const visited = new Set();
+        while (current && !visited.has(current.id)) {
+          visited.add(current.id);
+          const rawGroup = Number(current.style?.timeline_group);
+          if (Number.isFinite(rawGroup)) return rawGroup;
+          current = current.parent ? nodeMap[current.parent] : null;
+        }
+        return 9999;
+      };
+
       allNodes.forEach(node => {
-        const rawGroup = Number(node.style?.timeline_group);
+        const rawGroup = timelineGroupFor(node);
         const group = Number.isFinite(rawGroup) ? rawGroup : 9999;
         if (!groups.has(group)) groups.set(group, { year: null, books: [], other: [] });
         const bucket = groups.get(group);
@@ -2755,21 +2767,23 @@
       });
 
       [...groups.entries()].sort((a, b) => a[0] - b[0]).forEach(([, bucket], groupIndex) => {
-        const yearX = groupIndex * groupGap;
+        const defaultYearX = groupIndex * groupGap;
+        const yearX = Number(bucket.year?.pos_x ?? defaultYearX);
+        const yearY = Number(bucket.year?.pos_y ?? 0);
         if (bucket.year) {
           bucket.year._x = yearX;
-          bucket.year._y = 0;
+          bucket.year._y = yearY;
         }
         bucket.books.sort((a, b) => Number(a.style?.timeline_order || 0) - Number(b.style?.timeline_order || 0));
         const bookX = yearX + NODE_W + 150;
-        const startY = -((bucket.books.length - 1) * bookGap) / 2;
+        const startY = yearY - ((bucket.books.length - 1) * bookGap) / 2;
         bucket.books.forEach((book, index) => {
           book._x = bookX;
           book._y = startY + index * bookGap;
         });
         bucket.other.forEach((node, index) => {
           node._x = yearX;
-          node._y = NODE_H + 100 + index * bookGap;
+          node._y = yearY + NODE_H + 100 + index * bookGap;
         });
       });
       stumpLayer.selectAll('*').remove();
@@ -3069,6 +3083,8 @@
       document.getElementById('uploadCoverBtn').addEventListener('click', () => fCoverFile.click());
 
       let titleLookupTimer = null;
+      let titleLookupRequest = null;
+      let titleLookupSequence = 0;
 
       fTitle.addEventListener('input', () => {
         if (suppressTitleLookup) {
@@ -3100,10 +3116,17 @@
       });
 
       async function lookupBooksByTitle(query) {
+        const lookupType = selectedType;
+        const lookupSequence = ++titleLookupSequence;
+        if (titleLookupRequest) titleLookupRequest.abort();
+        titleLookupRequest = new AbortController();
         try {
-          const endpoint = selectedType === 'author' ? '/api/author-search/' : '/api/book-search/';
-          const res = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`);
+          const endpoint = lookupType === 'author' ? '/api/author-search/' : '/api/book-search/';
+          const res = await fetch(`${endpoint}?q=${encodeURIComponent(query)}`, {
+            signal: titleLookupRequest.signal,
+          });
           const data = await res.json();
+          if (lookupSequence !== titleLookupSequence || lookupType !== selectedType) return;
           autocompleteOptions = (data.results || []).slice(0, 8).map(item => ({
             ...item,
             label: `${item.title || ''} - ${item.author || 'Unknown author'}`,
@@ -3111,9 +3134,12 @@
 
           if (!bookSuggestions) return;
           renderBookSuggestions();
-        } catch (_) {
+        } catch (error) {
+          if (error.name === 'AbortError' || lookupSequence !== titleLookupSequence) return;
           autocompleteOptions = [];
           hideBookSuggestions();
+        } finally {
+          if (lookupSequence === titleLookupSequence) titleLookupRequest = null;
         }
       }
 

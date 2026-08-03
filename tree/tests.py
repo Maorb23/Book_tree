@@ -1589,3 +1589,82 @@ class DashboardGenreAndTimelineTests(TestCase):
         self.assertRedirects(response, reverse('tree:dashboard'))
         tree.refresh_from_db()
         self.assertEqual(tree.target_books, 30)
+
+    def test_manual_book_under_year_inherits_timeline_group(self):
+        tree = Tree.objects.create(
+            user=self.user,
+            name='Years',
+            is_default=True,
+            layout_mode=Tree.LAYOUT_TIMELINE,
+            generation_mode=Tree.GENERATION_YEAR,
+        )
+        year = Node.objects.create(
+            user=self.user,
+            tree=tree,
+            title='2024',
+            node_type='year',
+            year=2024,
+            style={'timeline_group': 3, 'timeline_role': 'year'},
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('tree:api-node-list'),
+            data=json.dumps({
+                'title': 'A new timeline book',
+                'node_type': 'book',
+                'parent': str(year.id),
+                'style': {'color': '#332211'},
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        book = Node.objects.get(pk=response.json()['id'])
+        self.assertEqual(book.parent, year)
+        self.assertEqual(book.style['timeline_group'], 3)
+        self.assertEqual(book.style['timeline_role'], 'book')
+        self.assertEqual(book.style['timeline_order'], 0)
+
+    def test_reparenting_book_to_year_repairs_timeline_metadata(self):
+        tree = Tree.objects.create(
+            user=self.user,
+            name='Years',
+            is_default=True,
+            layout_mode=Tree.LAYOUT_TIMELINE,
+        )
+        year = Node.objects.create(
+            user=self.user,
+            tree=tree,
+            title='2025',
+            node_type='year',
+            year=2025,
+            style={'timeline_group': 1, 'timeline_role': 'year'},
+        )
+        book = Node.objects.create(user=self.user, tree=tree, title='Moved book', node_type='book')
+        self.client.force_login(self.user)
+
+        response = self.client.patch(
+            reverse('tree:api-node-detail', args=[book.id]),
+            data=json.dumps({'parent': str(year.id)}),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        book.refresh_from_db()
+        self.assertEqual(book.style['timeline_group'], 1)
+        self.assertEqual(book.style['timeline_role'], 'book')
+
+    @patch('tree.views._search_authors_open_library')
+    def test_author_search_endpoint_returns_only_author_results(self, mock_search):
+        mock_search.return_value = [{
+            'title': 'Ursula K. Le Guin',
+            'author': 'Author',
+            'node_type': 'author',
+            'cover_url': 'https://example.com/author.jpg',
+        }]
+
+        response = self.client.get(reverse('tree:api-author-search'), {'q': 'Ursula'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['node_type'] for row in response.json()['results']], ['author'])
