@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Readwoods — My Book Tree</title>
+  <link rel="stylesheet" href="{% static 'css/mobile.css' %}">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -552,8 +553,8 @@
     }
   </style>
 </head>
-<body>
-  <nav class="nav">
+<body class="tree-workspace">
+  <nav class="nav tree-workspace-nav">
     <a href="{% url 'tree:landing' %}" class="nav__logo">
       <span class="site-logo" aria-hidden="true">
         <img src="{% static 'img/readwoods-icon.png' %}" alt="" width="36" height="36" loading="eager" decoding="async">
@@ -607,8 +608,44 @@
       {% endif %}
     </div>
   </nav>
+  {% include "partials/mobile_bottom_nav.html" %}
 
   <main class="canvas-wrap">
+    <div class="tree-mobile-toolbar mobile-only" id="treeMobileToolbar">
+      <div class="tree-mobile-toolbar__views" role="group" aria-label="Tree view">
+        <button type="button" data-tree-view="canvas" aria-pressed="true">Canvas</button>
+        <button type="button" data-tree-view="list" aria-pressed="false">List</button>
+        <button type="button" id="mobileFitTree">Fit</button>
+        {% if not is_readonly_tree %}<button type="button" id="mobileAddNode">+ Node</button>{% endif %}
+      </div>
+      <div class="tree-mobile-toolbar__tools">
+        <select id="mobileTreeSwitcher" aria-label="Current tree" {% if is_readonly_tree %}disabled{% endif %}>
+          {% for tree in trees %}
+            <option value="{{ tree.id }}" {% if tree.id == current_tree.id %}selected{% endif %}>{{ tree.name }}</option>
+          {% endfor %}
+        </select>
+        <details class="tree-mobile-more">
+          <summary>More</summary>
+          <div>
+            <button type="button" data-proxy-click="expandAllBtn">Expand all</button>
+            <button type="button" data-proxy-click="collapseAllBtn">Collapse all</button>
+            {% if not is_readonly_tree %}
+              <button type="button" data-proxy-click="saveTreeBtn">Save tree</button>
+              <button type="button" data-proxy-click="treeVersionsBtn">Versions</button>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <section class="mobile-tree-list mobile-only" id="mobileTreeList" aria-label="Tree list" hidden>
+      <div class="mobile-tree-list__search">
+        <input type="search" id="mobileTreeSearch" placeholder="Search nodes..." aria-label="Search tree nodes">
+        <span id="mobileTreeCount" aria-live="polite"></span>
+      </div>
+      <div class="mobile-tree-list__nodes" id="mobileTreeListNodes"></div>
+    </section>
+
     <svg id="treeCanvas" aria-label="Book tree visualization">
       <defs>
         <filter id="barkShadow">
@@ -1519,6 +1556,7 @@
         window.allNodes = allNodes;
         window.nodeMap = nodeMap;
         window.allEdges = allEdges;
+        window.dispatchEvent(new CustomEvent('readwoods:tree-updated'));
         treeBaselineSnapshot = currentTreeSnapshot();
 
         if (allNodes.length === 0) {
@@ -1542,6 +1580,7 @@
       buildLayout();
       renderTree();
       updateMinimap();
+      window.dispatchEvent(new CustomEvent('readwoods:tree-updated'));
     }
 
     function getEdgeVisualStyle(edge, fallbackColor) {
@@ -2896,6 +2935,7 @@
 
     window.loadTree = loadTree;
     window.panToNode = panToNode;
+    window.onNodeClick = onNodeClick;
     window.getTheme = getTheme;
     window.fitTree = fitTree;
     window.renderTreeInstant = renderTreeInstant;
@@ -3531,5 +3571,6 @@
       });
     })();
   </script>
+  <script src="{% static 'js/tree_mobile.js' %}"></script>
 </body>
 </html>

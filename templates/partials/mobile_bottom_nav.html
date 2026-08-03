@@ -1,0 +1,31 @@
+<nav class="mobile-bottom-nav{% if not request.user.is_authenticated %} mobile-bottom-nav--guest{% endif %}" aria-label="Mobile navigation">
+  {% if request.user.is_authenticated %}
+    <a href="{% url 'tree:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' %}aria-current="page"{% endif %}>
+      <span aria-hidden="true">⌂</span><small>Forest</small>
+    </a>
+    <a href="{% url 'tree:my-books' %}" {% if request.resolver_match.url_name == 'my-books' %}aria-current="page"{% endif %}>
+      <span aria-hidden="true">▤</span><small>Books</small>
+    </a>
+    <a href="{% url 'tree:tree' %}" {% if request.resolver_match.url_name == 'tree' or request.resolver_match.url_name == 'shared-tree' %}aria-current="page"{% endif %}>
+      <span aria-hidden="true">♧</span><small>Tree</small>
+    </a>
+    <a href="{% url 'tree:community-feed' %}" {% if 'community-' in request.resolver_match.url_name %}aria-current="page"{% endif %}>
+      <span aria-hidden="true">♧</span><small>Community</small>
+    </a>
+    <details class="mobile-bottom-more">
+      <summary><span aria-hidden="true">•••</span><small>More</small></summary>
+      <div>
+        <a href="{% url 'tree:challenges' %}">Challenges</a>
+        <a href="{% url 'tree:stats' %}">Stats</a>
+        <a href="{% url 'tree:my-profile' %}">My Profile</a>
+        <a href="{% url 'tree:badges' %}">Badges</a>
+        <a href="{% url 'tree:donations' %}">Donations</a>
+        <a href="{% url 'tree:logout' %}">Logout</a>
+      </div>
+    </details>
+  {% else %}
+    <a href="{% url 'tree:landing' %}" aria-current="page"><span aria-hidden="true">⌂</span><small>Home</small></a>
+    <a href="{% url 'tree:community-feed' %}"><span aria-hidden="true">♧</span><small>Community</small></a>
+    <a href="{% url 'tree:login' %}"><span aria-hidden="true">→</span><small>Sign in</small></a>
+  {% endif %}
+</nav>

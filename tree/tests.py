@@ -1529,6 +1529,37 @@ class DashboardGenreAndTimelineTests(TestCase):
             self.assertContains(response, f'/static/img/genres/{filename}')
         self.assertContains(response, "if (lookupType === 'genre')")
 
+    def test_authenticated_pages_include_shared_mobile_navigation(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:dashboard'))
+
+        self.assertContains(response, '/static/css/mobile.css')
+        self.assertContains(response, 'class="mobile-bottom-nav"')
+        for label in ('Forest', 'Books', 'Tree', 'Community', 'More'):
+            self.assertContains(response, f'<small>{label}</small>', html=True)
+        for label in ('Challenges', 'Stats', 'My Profile', 'Badges', 'Donations', 'Logout'):
+            self.assertContains(response, label)
+
+    def test_tree_page_exposes_mobile_canvas_and_list_modes(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:tree'))
+
+        self.assertContains(response, 'id="treeMobileToolbar"')
+        self.assertContains(response, 'data-tree-view="canvas"')
+        self.assertContains(response, 'data-tree-view="list"')
+        self.assertContains(response, 'id="mobileTreeList"')
+        self.assertContains(response, '/static/js/tree_mobile.js')
+
+    def test_mobile_tree_reuses_existing_tree_endpoints(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:tree'))
+
+        self.assertNotContains(response, 'navigator.userAgent')
+        self.assertNotContains(response, 'window.location.replace')
+
     def test_landing_explains_the_four_step_workflow(self):
         response = self.client.get(reverse('tree:landing'))
 
