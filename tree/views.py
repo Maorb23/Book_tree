@@ -175,10 +175,38 @@ def my_profile(request):
     else:
         form = UserProfileForm(instance=profile)
 
+    reads_count = sum(
+        book.shelf == Node.SHELF_READ
+        for book in _get_library_books(request.user)
+    )
+    followers_count = FriendRequest.objects.filter(
+        to_user=request.user,
+        status=FriendRequest.STATUS_ACCEPTED,
+    ).count()
+    following_count = FriendRequest.objects.filter(
+        from_user=request.user,
+        status=FriendRequest.STATUS_ACCEPTED,
+    ).count()
+
     return render(request, 'my_profile.html', {
         'form': form,
         'profile': profile,
         'saved': saved,
+        'reads_count': reads_count,
+        'followers_count': followers_count,
+        'following_count': following_count,
+    })
+
+
+@login_required
+def donations(request):
+    tree_count = Tree.objects.filter(user=request.user).count()
+    book_count = len(_get_library_books(request.user))
+    treecred_cents = (tree_count * 5) + book_count
+    return render(request, 'donations.html', {
+        'treecred_amount': f'{treecred_cents // 100}.{treecred_cents % 100:02d}',
+        'tree_count': tree_count,
+        'book_count': book_count,
     })
 
 
@@ -3256,10 +3284,10 @@ def _get_reading_content():
         },
         {
             'type': 'Video',
-            'title': 'Why should you read "Fahrenheit 451"?',
-            'source': 'TED-Ed',
+            'title': '’AI will become very good at manipulating emotions’: Kazuo Ishiguro',
+            'source': 'The Guardian',
             'summary': 'A short animated introduction to Ray Bradbury and the power of forbidden books.',
-            'url': 'https://www.youtube.com/watch?v=R9n98KChP3M',
+            'url': 'https://www.theguardian.com/books/2025/mar/08/ai-will-become-very-good-at-manipulating-emotions-kazuo-ishiguro-on-the-future-of-fiction-and-truth',
         },
         {
             'type': 'Video',

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Readwoods - Donations{% endblock %}
+
+{% block body %}
+{% include "partials/main_nav.html" %}
+
+<main class="donations-page">
+  <section class="donations-hero">
+    <h1>Grow your book tree. Help protect the real ones.</h1>
+    <p>Every tree and book you add helps Readwoods set aside more for redwood conservation.</p>
+  </section>
+
+  <section class="treecred-card" aria-labelledby="treecred-title">
+    <div class="treecred-card__heading">
+      <div>
+        <div class="treecred-title-row">
+          <h2 id="treecred-title">TreeCred</h2>
+          <details class="treecred-help">
+            <summary aria-label="What is TreeCred?">?</summary>
+            <div class="treecred-help__popover" role="tooltip">
+              <p>Users generate TreeCred through activity on Readwoods.</p>
+              <ul>
+                <li>Creating a tree generates $0.05.</li>
+                <li>Adding a book generates $0.01.</li>
+              </ul>
+              <p>TreeCred represents money Readwoods sets aside for redwood conservation; it is not money you can withdraw.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+      <p class="treecred-balance"><span>$</span>{{ treecred_amount }}</p>
+    </div>
+    <div class="treecred-breakdown" aria-label="TreeCred activity breakdown">
+      <p><strong>{{ tree_count }}</strong> tree{{ tree_count|pluralize }} grown</p>
+      <span aria-hidden="true"></span>
+      <p><strong>{{ book_count }}</strong> book{{ book_count|pluralize }} added</p>
+    </div>
+  </section>
+
+  <section class="donation-options" aria-labelledby="donation-options-title">
+    <div class="donation-options__intro">
+      <h2 id="donation-options-title">Support the redwoods</h2>
+      <p>Want to do more? Donate directly to organizations caring for redwood forests and parks.</p>
+    </div>
+    <div class="donation-links">
+      <a class="donation-link donation-link--save-redwoods" href="https://www.savetheredwoods.org/donate/" target="_blank" rel="noopener noreferrer">
+        <span class="donation-link__content">
+          <strong>Save the Redwoods League</strong>
+          <small>Protect and restore redwood forests</small>
+        </span>
+        <span class="donation-link__arrow" aria-hidden="true">&#8599;</span>
+      </a>
+      <a class="donation-link donation-link--redwood-parks" href="https://redwoodparksconservancy.org/donate/" target="_blank" rel="noopener noreferrer">
+        <span class="donation-link__content">
+          <strong>Redwood Parks Conservancy</strong>
+          <small>Support parks, programs, and public lands</small>
+        </span>
+        <span class="donation-link__arrow" aria-hidden="true">&#8599;</span>
+      </a>
+    </div>
+    <p class="donation-note">These donations are made directly to each organization and are separate from TreeCred.</p>
+  </section>
+</main>
+{% endblock %}

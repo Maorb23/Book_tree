@@ -61,6 +61,54 @@ class LandingRecommendationsTests(TestCase):
         self.assertNotIn('Library shadow', [book['title'] for book in recommendations])
 
 
+class DonationsPageTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='giving_reader', password='pass1234')
+
+    def test_donations_page_requires_login(self):
+        response = self.client.get(reverse('tree:donations'))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('tree:login'), response.url)
+
+    def test_treecred_uses_trees_and_distinct_library_books(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        Tree.objects.create(user=self.user, name='Poetry')
+        Node.objects.create(user=self.user, tree=tree, title='Dune', node_type='book')
+        ImportedBook.objects.create(user=self.user, title='Braiding Sweetgrass')
+        Node.objects.create(
+            user=self.user,
+            tree=tree,
+            title='Braiding Sweetgrass',
+            node_type='book',
+            style={'library_shadow': True},
+        )
+        Node.objects.create(user=self.user, tree=tree, title='Science Fiction', node_type='genre')
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:donations'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['tree_count'], 2)
+        self.assertEqual(response.context['book_count'], 2)
+        self.assertEqual(response.context['treecred_amount'], '0.12')
+        self.assertContains(response, '<span>$</span>0.12', html=True)
+
+    def test_page_has_safe_external_donation_links_and_profile_menu_entry(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:donations'))
+
+        self.assertContains(response, 'href="https://www.savetheredwoods.org/donate/"')
+        self.assertContains(response, 'href="https://redwoodparksconservancy.org/donate/"')
+        self.assertContains(response, 'target="_blank"', count=2)
+        self.assertContains(response, 'rel="noopener noreferrer"', count=2)
+        self.assertContains(response, f'href="{reverse("tree:donations")}">Donations</a>')
+        self.assertContains(response, 'donation-link--save-redwoods')
+        self.assertContains(response, 'donation-link--redwood-parks')
+        self.assertNotContains(response, 'donations-kicker')
+
+
 class CommunityModelTests(TestCase):
     def setUp(self):
         self.user_a = User.objects.create_user(username='reader_a', password='pass1234')
@@ -487,6 +535,40 @@ class LoginBadgesAndStatsTests(TestCase):
         self.assertEqual(response.context['average_pages'], 75)
         self.assertEqual(response.context['reading_days'], 2)
         self.assertContains(response, 'Average pages per reading day')
+
+    def test_profile_shows_read_and_connection_counts(self):
+        follower = User.objects.create_user(username='follower', password='pass1234')
+        followed = User.objects.create_user(username='followed', password='pass1234')
+        FriendRequest.objects.create(
+            from_user=follower,
+            to_user=self.user,
+            status=FriendRequest.STATUS_ACCEPTED,
+        )
+        FriendRequest.objects.create(
+            from_user=self.user,
+            to_user=followed,
+            status=FriendRequest.STATUS_ACCEPTED,
+        )
+        ImportedBook.objects.create(
+            user=self.user,
+            title='Dune',
+            shelf=Node.SHELF_READ,
+        )
+        ImportedBook.objects.create(
+            user=self.user,
+            title='Beloved',
+            shelf=Node.SHELF_WANT_TO_READ,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:my-profile'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['reads_count'], 1)
+        self.assertEqual(response.context['followers_count'], 1)
+        self.assertEqual(response.context['following_count'], 1)
+        self.assertContains(response, '@stats_reader')
+        self.assertContains(response, 'href="#profile-edit"')
 
 
 class EmailSettingsTests(SimpleTestCase):

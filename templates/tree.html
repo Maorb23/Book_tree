@@ -64,7 +64,7 @@
     .nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 200;
       height: 68px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
-      padding: 0 22px;
+      padding: 0 clamp(32px, 3.5vw, 64px);
       background: linear-gradient(180deg, rgba(9, 10, 9, 0.98), rgba(13, 16, 12, 0.86));
       border-bottom: 1px solid var(--border);
       backdrop-filter: blur(12px);
@@ -128,6 +128,12 @@
       padding-block: 10px; margin-block: -10px;
     }
     .nav-menu__trigger { display: inline-flex; align-items: center; min-height: 40px; }
+    .nav-dropdown-arrow {
+      width: 7px; height: 7px; margin-left: 7px; flex: 0 0 7px;
+      border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+      transform: translateY(-2px) rotate(45deg); opacity: 0.78;
+    }
+    .nav-profile > .nav-dropdown-arrow { color: var(--text-light); margin-left: 9px; }
     .nav-menu__panel,
     .nav-profile__panel {
       position: absolute; top: 100%; right: 0; z-index: 350;
@@ -562,7 +568,7 @@
       <span class="nav__user">{{ request.user.username }}</span>
       {% if is_readonly_tree %}<span class="nav__user">Viewing {{ tree_owner.username }}'s tree</span>{% endif %}
       <div class="nav-menu">
-        <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost nav-menu__trigger">Community</a>
+        <a href="{% url 'tree:community-feed' %}" class="btn btn--ghost nav-menu__trigger">Community<span class="nav-dropdown-arrow" aria-hidden="true"></span></a>
         <div class="nav-menu__panel">
           <a href="{% url 'tree:community-feed' %}">Feed</a>
           <a href="{% url 'tree:community-people' %}">Find People</a>
@@ -575,11 +581,13 @@
       <a href="{% url 'tree:stats' %}" class="btn btn--ghost">Stats</a>
       <div class="nav-profile">
         {% include "partials/user_avatar.html" %}
+        <span class="nav-dropdown-arrow" aria-hidden="true"></span>
         <div class="nav-profile__panel">
           <a href="{% url 'tree:my-profile' %}">My Profile</a>
           <a href="{% url 'tree:badges' %}">Badges</a>
           <a href="{% url 'tree:my-books' %}">My Books</a>
           <a href="{% url 'tree:challenges' %}">Challenges</a>
+          <a href="{% url 'tree:donations' %}">Donations</a>
           <a href="{% url 'tree:logout' %}">Logout</a>
         </div>
       </div>

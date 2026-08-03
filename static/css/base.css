@@ -66,7 +66,7 @@ body {
 /* Keep shared page chrome comfortably inset from the viewport edges. The tree
    workspace has its own navigation and intentionally does not use this class. */
 .nav.site-nav {
-  padding-inline: clamp(52px, 5vw, 76px);
+  padding-inline: clamp(64px, 6vw, 104px);
 }
 
 .nav__logo {
@@ -126,6 +126,22 @@ body {
   display: inline-flex;
   align-items: center;
   min-height: 40px;
+}
+
+.nav-dropdown-arrow {
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  flex: 0 0 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.78;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.nav-profile > .nav-dropdown-arrow {
+  margin-left: 9px;
+  color: #dbece0;
 }
 
 .nav-menu__panel,
@@ -308,6 +324,71 @@ body {
   max-width: 560px;
   color: #52604d;
   line-height: 1.6;
+}
+
+.profile-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.profile-identity h1 {
+  margin-top: 0;
+}
+
+.profile-handle {
+  color: #5c6b56;
+  font-weight: 600;
+}
+
+.profile-edit-link {
+  margin-top: 4px;
+  border: 1px solid rgba(66, 107, 48, 0.38);
+  border-radius: 999px;
+  color: #315423;
+  padding: 7px 15px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.profile-edit-link:hover,
+.profile-edit-link:focus-visible {
+  background: rgba(95, 143, 63, 0.12);
+  outline: none;
+}
+
+.profile-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  margin-top: 18px;
+}
+
+.profile-metrics div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.profile-metrics dt {
+  color: #5c6b56;
+  font-size: 0.9rem;
+  order: 2;
+}
+
+.profile-metrics dd {
+  color: #26331f;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.profile-created {
+  margin-top: 14px;
+  color: #687b62;
+  font-size: 0.9rem;
 }
 
 .profile-form {
@@ -506,7 +587,7 @@ body {
 
 @media (max-width: 720px) {
   .nav.site-nav {
-    padding-inline: 20px;
+    padding-inline: 24px;
   }
 
   .user-avatar {
@@ -532,6 +613,15 @@ body {
     margin: 0 auto;
   }
 
+  .profile-identity {
+    align-items: center;
+    text-align: left;
+  }
+
+  .profile-metrics {
+    justify-content: center;
+  }
+
   .profile-form {
     padding: 18px;
   }
@@ -552,6 +642,277 @@ body {
   .avatar-picker__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ── Donations ── */
+.donations-page {
+  min-height: 100vh;
+  padding: 118px 22px 64px;
+  background:
+    radial-gradient(circle at 12% 16%, rgba(204, 165, 73, 0.14), transparent 28%),
+    radial-gradient(circle at 88% 34%, rgba(95, 143, 63, 0.16), transparent 30%),
+    linear-gradient(150deg, #152015, #0c130e 68%);
+  color: #eef6eb;
+}
+
+.donations-hero,
+.treecred-card,
+.donation-options {
+  width: min(100%, 820px);
+  margin-inline: auto;
+}
+
+.donations-hero { padding-block: 22px 36px; }
+
+.donations-hero h1 {
+  max-width: 700px;
+  margin-top: 12px;
+  font-family: var(--font-serif);
+  font-size: clamp(2.4rem, 7vw, 4.8rem);
+  line-height: 1.08;
+}
+
+.donations-hero > p:last-child {
+  max-width: 600px;
+  margin-top: 18px;
+  color: #b8c9b5;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.treecred-card,
+.donation-options {
+  border: 1px solid rgba(156, 190, 132, 0.25);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(37, 57, 34, 0.94), rgba(21, 33, 23, 0.96));
+  box-shadow: 0 22px 48px rgba(3, 8, 4, 0.3);
+}
+
+.treecred-card { padding: clamp(24px, 5vw, 40px); }
+
+.treecred-card__heading,
+.treecred-title-row,
+.treecred-breakdown,
+.donation-link {
+  display: flex;
+  align-items: center;
+}
+
+.treecred-card__heading {
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.treecred-title-row {
+  gap: 10px;
+}
+
+.treecred-title-row h2,
+.donation-options h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.7rem, 4vw, 2.3rem);
+}
+
+.treecred-help { position: relative; }
+
+.treecred-help summary {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(231, 198, 110, 0.68);
+  border-radius: 50%;
+  color: #f2d787;
+  cursor: help;
+  font-size: 0.8rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.treecred-help summary::-webkit-details-marker { display: none; }
+
+.treecred-help summary:focus-visible {
+  outline: 3px solid rgba(231, 198, 110, 0.32);
+  outline-offset: 3px;
+}
+
+.treecred-help__popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  z-index: 10;
+  width: min(320px, calc(100vw - 44px));
+  padding: 16px;
+  border: 1px solid rgba(231, 198, 110, 0.3);
+  border-radius: 10px;
+  background: #101a12;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.4);
+  color: #dce8d8;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 5px);
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.treecred-help__popover ul { margin: 8px 0 8px 18px; }
+
+.treecred-help[open] .treecred-help__popover,
+.treecred-help:hover .treecred-help__popover,
+.treecred-help:focus-within .treecred-help__popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+.treecred-balance {
+  color: #f4d67d;
+  font-family: var(--font-serif);
+  font-size: clamp(3rem, 8vw, 5rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.treecred-balance span {
+  margin-right: 4px;
+  font-size: 0.45em;
+  vertical-align: top;
+}
+
+.treecred-breakdown {
+  gap: 18px;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(156, 190, 132, 0.2);
+  color: #b8c9b5;
+}
+
+.treecred-breakdown strong { color: #f4f8f1; }
+
+.treecred-breakdown > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #6f9759;
+}
+
+.donation-options {
+  margin-top: 24px;
+  padding: clamp(24px, 5vw, 40px);
+}
+
+.donation-options__intro > p:last-child {
+  max-width: 610px;
+  margin-top: 10px;
+  color: #b8c9b5;
+  line-height: 1.6;
+}
+
+.donation-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 26px;
+}
+
+.donation-link {
+  position: relative;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  min-height: 230px;
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(231, 198, 110, 0.3);
+  border-radius: 12px;
+  background-color: #162019;
+  background-position: center;
+  background-size: cover;
+  color: #f1f7ee;
+  text-decoration: none;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition);
+}
+
+.donation-link::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(5, 10, 6, 0.05) 24%, rgba(5, 10, 6, 0.9) 100%);
+  transition: background var(--transition);
+}
+
+.donation-link--save-redwoods {
+  background-image: url("../img/donation-save-redwoods.jpg");
+}
+
+.donation-link--redwood-parks {
+  background-image: url("../img/donation-redwood-parks.jpg");
+}
+
+.donation-link:hover,
+.donation-link:focus-visible {
+  border-color: #e7c66e;
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.donation-link:hover::before,
+.donation-link:focus-visible::before {
+  background: linear-gradient(180deg, rgba(5, 10, 6, 0) 16%, rgba(5, 10, 6, 0.82) 100%);
+}
+
+.donation-link__content,
+.donation-link__arrow {
+  position: relative;
+  z-index: 1;
+}
+
+.donation-link strong,
+.donation-link small { display: block; }
+
+.donation-link strong {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+}
+
+.donation-link small {
+  margin-top: 7px;
+  color: #aebfab;
+  line-height: 1.35;
+}
+
+.donation-link__arrow {
+  color: #e7c66e;
+  font-size: 1.25rem;
+}
+
+.donation-note {
+  margin-top: 18px;
+  color: #8fa18d;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 680px) {
+  .donations-page { padding: 96px 14px 42px; }
+
+  .treecred-card__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .treecred-help__popover {
+    left: -42px;
+    transform: translate(0, 5px);
+  }
+
+  .treecred-help[open] .treecred-help__popover,
+  .treecred-help:hover .treecred-help__popover,
+  .treecred-help:focus-within .treecred-help__popover {
+    transform: translate(0, 0);
+  }
+
+  .donation-links { grid-template-columns: 1fr; }
 }
 
 /* ── Buttons ── */

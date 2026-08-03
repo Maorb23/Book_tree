@@ -20,10 +20,32 @@
       {% endif %}
     </div>
     <div class="profile-copy">
+      <div class="profile-identity">
+        <div>
+          <h1>{{ profile.display_name|default:request.user.username }}</h1>
+          <p class="profile-handle">@{{ request.user.username }}</p>
+        </div>
+        <a class="profile-edit-link" href="#profile-edit">Edit</a>
+      </div>
+      <dl class="profile-metrics">
+        <div>
+          <dt>Reads</dt>
+          <dd>{{ reads_count }}</dd>
+        </div>
+        <div>
+          <dt>Followers</dt>
+          <dd>{{ followers_count }}</dd>
+        </div>
+        <div>
+          <dt>Following</dt>
+          <dd>{{ following_count }}</dd>
+        </div>
+      </dl>
+      <p class="profile-created">Created {{ request.user.date_joined|timesince }} ago</p>
     </div>
   </section>
 
-  <form class="profile-form" method="post">
+  <form class="profile-form" id="profile-edit" method="post">
     {% csrf_token %}
     {% if saved %}
       <div class="profile-message">Profile saved.</div>
