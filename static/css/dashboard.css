@@ -1,0 +1,109 @@
+body {
+  background:
+    radial-gradient(900px 520px at 12% -8%, rgba(116, 157, 89, 0.22), transparent 62%),
+    linear-gradient(180deg, #0b100c, #0d140f);
+}
+
+.dashboard-page {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 118px 0 80px;
+}
+
+.dashboard-hero,
+.dashboard-card__head,
+.dashboard-actions,
+.dashboard-tree__summary,
+.dashboard-tree__goal,
+.treecred-activity div {
+  display: flex;
+  align-items: center;
+}
+
+.dashboard-hero {
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.dashboard-hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  margin-bottom: 8px;
+}
+
+.dashboard-hero p,
+.dashboard-card p,
+.dashboard-tree span,
+.dashboard-tree small {
+  color: var(--landing-muted);
+}
+
+.dashboard-actions { gap: 10px; }
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.dashboard-card {
+  border: 1px solid var(--landing-stroke);
+  border-radius: 12px;
+  padding: 22px;
+  background: linear-gradient(155deg, rgba(25, 34, 24, 0.96), rgba(10, 15, 11, 0.96));
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.28);
+}
+
+.dashboard-card__head {
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.dashboard-card h2 { font-family: var(--font-serif); font-size: 1.55rem; }
+.dashboard-card h3 { font-size: 0.9rem; margin-bottom: 12px; color: #dbe8d8; }
+.dashboard-card a { color: #a9d48f; text-decoration: none; font-weight: 700; font-size: 0.88rem; }
+
+.dashboard-book-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dashboard-book { display: grid; grid-template-columns: 42px 1fr; gap: 10px; align-items: center; min-width: 0; }
+.dashboard-book img,
+.dashboard-book__fallback { width: 42px; height: 62px; border-radius: 5px; object-fit: cover; background: #273224; }
+.dashboard-book__fallback { display: grid; place-items: center; color: #b8c8b2; font-size: 0.72rem; }
+.dashboard-book strong,
+.dashboard-book small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-book small { color: var(--landing-muted); margin-top: 3px; }
+.dashboard-recent { margin-top: 18px; font-size: 0.86rem; line-height: 1.5; }
+.dashboard-recent span { color: #dce7d8; }
+
+.dashboard-metric { display: flex; align-items: baseline; gap: 9px; margin: 26px 0 14px; }
+.dashboard-metric strong { font-family: var(--font-serif); font-size: 3rem; color: #d8edc7; }
+.dashboard-metric span { color: var(--landing-muted); }
+.dashboard-progress { height: 9px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,0.08); margin-bottom: 10px; }
+.dashboard-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6fa966, #c0dc9d); }
+
+.dashboard-tree-list,
+.treecred-activity { display: grid; gap: 12px; }
+.dashboard-tree { border-top: 1px solid rgba(130, 156, 118, 0.2); padding-top: 14px; }
+.dashboard-tree:first-child { border-top: 0; padding-top: 0; }
+.dashboard-tree__summary { justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.dashboard-tree__summary span { font-size: 0.82rem; }
+.dashboard-tree small { display: block; font-size: 0.78rem; }
+.dashboard-tree__goal { gap: 8px; margin-top: 10px; }
+.dashboard-tree__goal label { font-size: 0.78rem; color: #bdcbb8; }
+.dashboard-tree__goal input { width: 90px; border: 1px solid var(--landing-stroke); border-radius: 7px; padding: 7px 8px; background: #0b110c; color: #fff; }
+
+.treecred-balance { font-family: var(--font-serif); font-size: 3.6rem; color: #d9efbd; line-height: 1; margin: 22px 0 10px; }
+.treecred-balance span { font-size: 1.5rem; color: #8fb77a; margin-right: 4px; }
+.treecred-activity { margin-top: 22px; }
+.treecred-activity div { justify-content: space-between; gap: 12px; border-top: 1px solid rgba(130, 156, 118, 0.18); padding-top: 10px; font-size: 0.84rem; }
+.treecred-activity strong { color: #b7dc9c; }
+.dashboard-empty { line-height: 1.6; }
+
+@media (max-width: 780px) {
+  .dashboard-page { padding-top: 100px; }
+  .dashboard-hero { align-items: flex-start; flex-direction: column; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-book-list { grid-template-columns: 1fr; }
+  .dashboard-actions { flex-wrap: wrap; }
+}

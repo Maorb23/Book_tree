@@ -40,6 +40,7 @@ from rest_framework import status
 from .models import (
     Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, BookReview,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog, UserProfile,
+    TreeCredTransaction,
 )
 from .serializers import NodeSerializer, EdgeSerializer, ImportedBookSerializer, TreeSerializer, TreeVersionSerializer, BookReviewSerializer
 from .forms import EmailUserCreationForm, UserProfileForm
@@ -69,6 +70,33 @@ def landing(request):
     return render(request, 'landing.html', {
         'recommended_books': _get_landing_recommendations(),
         'reading_content': _get_reading_content(),
+    })
+
+
+@login_required
+def dashboard(request):
+    books = _get_library_books(request.user)
+    currently_reading = [book for book in books if book.shelf == Node.SHELF_CURRENTLY_READING][:4]
+    recent_books = sorted(books, key=lambda book: book.date_added, reverse=True)[:5]
+    challenge = _challenge_context(request.user)
+    trees = list(
+        Tree.objects.filter(user=request.user)
+        .annotate(book_count=Count('nodes', filter=Q(nodes__node_type='book')))
+        .order_by('-updated_at')
+    )
+    for tree in trees:
+        tree.progress_percent = (
+            min(100, round((tree.book_count / tree.target_books) * 100))
+            if tree.target_books else None
+        )
+    treecred = _treecred_context(request.user)
+    return render(request, 'dashboard.html', {
+        'currently_reading': currently_reading,
+        'recent_books': recent_books,
+        'library_count': len(books),
+        'trees': trees,
+        **challenge,
+        **treecred,
     })
 
 
@@ -202,12 +230,23 @@ def my_profile(request):
 def donations(request):
     tree_count = Tree.objects.filter(user=request.user).count()
     book_count = len(_get_library_books(request.user))
-    treecred_cents = (tree_count * 5) + book_count
+    treecred_cents = _treecred_context(request.user)['treecred_balance']
     return render(request, 'donations.html', {
         'treecred_amount': f'{treecred_cents // 100}.{treecred_cents % 100:02d}',
         'tree_count': tree_count,
         'book_count': book_count,
     })
+
+
+def _treecred_context(user):
+    """Return the user's idempotent TreeCred ledger balance and recent activity."""
+    transactions = TreeCredTransaction.objects.filter(user=user)
+    balance = transactions.aggregate(total=Sum('amount'))['total'] or 0
+    return {
+        'treecred_balance': balance,
+        'treecred_amount': f'{balance // 100}.{balance % 100:02d}',
+        'treecred_transactions': transactions[:5],
+    }
 
 
 @login_required
@@ -246,7 +285,8 @@ def badges(request):
 
 
 def _challenge_context(user):
-    challenge, _ = ReadingChallenge.objects.get_or_create(user=user, year=2026)
+    current_year = timezone.localdate().year
+    challenge, _ = ReadingChallenge.objects.get_or_create(user=user, year=current_year)
     node_read_books = Node.objects.filter(
         user=user,
         node_type='book',
@@ -283,6 +323,7 @@ def _challenge_context(user):
 
     return {
         'challenge': challenge,
+        'books_read': books_read,
         'books_read_2026': books_read,
         'book_percent': book_percent,
         'books_remaining': max(target - books_read, 0),
@@ -366,7 +407,7 @@ def _render_register(request, form, next_url, status=200, **context):
 
 def register_view(request):
     if request.user.is_authenticated:
-        return redirect('tree:tree')
+        return redirect('tree:dashboard')
 
     form = EmailUserCreationForm(request.POST or None)
     next_url = request.POST.get('next') or request.GET.get('next')
@@ -537,13 +578,13 @@ def _send_welcome_email(user):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('tree:tree')
+        return redirect('tree:dashboard')
 
     next_url = request.POST.get('next') or request.GET.get('next')
     form = AuthenticationForm(request, data=request.POST or None)
     if request.method == 'POST' and form.is_valid():
         login(request, form.get_user())
-        return redirect(next_url or 'tree:tree')
+        return redirect(next_url or 'tree:dashboard')
 
     return render(request, 'login.html', {
         'form': form,
@@ -1310,6 +1351,23 @@ def tree_detail(request, tree_id):
     })
 
 
+@login_required
+@require_http_methods(['POST'])
+def tree_goal_update(request, tree_id):
+    tree = get_object_or_404(Tree, pk=tree_id, user=request.user)
+    raw_target = (request.POST.get('target_books') or '').strip()
+    if not raw_target:
+        tree.target_books = None
+    else:
+        try:
+            target = int(raw_target)
+        except ValueError:
+            return redirect('tree:dashboard')
+        tree.target_books = max(1, min(target, 10000))
+    tree.save(update_fields=['target_books', 'updated_at'])
+    return redirect('tree:dashboard')
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def tree_auto_from_shelf(request):
@@ -1340,8 +1398,14 @@ def tree_auto_from_shelf(request):
 
     if destination == 'existing':
         tree = _get_tree_by_id_or_default(request.user, request.data.get('tree_id') or request.data.get('tree'))
+        if mode == 'year' and tree.nodes.exists():
+            return Response(
+                {'detail': 'Year timelines must use a new or empty tree.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
     else:
-        tree_name = (request.data.get('tree_name') or f'{shelf} authors').strip()[:160]
+        default_suffix = 'timeline' if mode == 'year' else 'authors'
+        tree_name = (request.data.get('tree_name') or f'{shelf} {default_suffix}').strip()[:160]
         tree = Tree.objects.create(
             user=request.user,
             name=tree_name or 'Auto Tree',
@@ -1349,6 +1413,9 @@ def tree_auto_from_shelf(request):
         )
 
     with transaction.atomic():
+        tree.layout_mode = Tree.LAYOUT_TIMELINE if mode == 'year' else Tree.LAYOUT_ORGANIC
+        tree.generation_mode = mode
+        tree.save(update_fields=['layout_mode', 'generation_mode', 'updated_at'])
         _create_tree_version(request.user, tree, f'Before auto tree from {shelf}', 'auto_tree')
         result = strategy.generate(request.user, books, tree)
 
@@ -1598,6 +1665,7 @@ def library_book_create(request):
 def _auto_tree_strategy(mode):
     strategies = {
         'author': AuthorAutoTreeStrategy(),
+        'year': YearAutoTreeStrategy(),
     }
     return strategies.get(mode)
 
@@ -1689,6 +1757,97 @@ class AuthorAutoTreeStrategy:
                     continue
                 payloads[key] = _enrich_author_for_auto_tree(author_name, allow_network=True)
         return payloads
+
+
+class YearAutoTreeStrategy:
+    mode = 'year'
+
+    def generate(self, user, books, tree):
+        grouped = {}
+        for source_book in books:
+            payload = _library_book_to_payload(source_book)
+            year = _safe_int(payload.get('year'))
+            grouped.setdefault(year, []).append((source_book, payload))
+
+        ordered_years = sorted(grouped, key=lambda value: (value is None, value or 0))
+        created_year_count = 0
+        created_book_count = 0
+        reused_book_count = 0
+        created_edge_count = 0
+        previous_tail = None
+
+        for group_index, year in enumerate(ordered_years):
+            title = str(year) if year is not None else 'Unknown year'
+            year_node = Node.objects.filter(
+                user=user,
+                tree=tree,
+                node_type='year',
+                year=year,
+                title=title,
+            ).first()
+            if year_node is None:
+                year_node = Node.objects.create(
+                    user=user,
+                    tree=tree,
+                    title=title,
+                    node_type='year',
+                    year=year,
+                    style={
+                        'generated_by': 'year_auto_tree',
+                        'timeline_group': group_index,
+                        'timeline_role': 'year',
+                        'color': '#342819',
+                        'glow': '#e3bd79',
+                        'border': '#d4a85d',
+                    },
+                )
+                created_year_count += 1
+
+            if previous_tail is not None:
+                _, created = Edge.objects.get_or_create(
+                    user=user,
+                    tree=tree,
+                    source=previous_tail,
+                    target=year_node,
+                    edge_type='progression',
+                    defaults={
+                        'label': 'Next year',
+                        'style': {'color': '#d7b380', 'line_style': 'solid', 'width': 4},
+                    },
+                )
+                created_edge_count += int(created)
+
+            group_books = sorted(
+                grouped[year],
+                key=lambda row: (_normalize_text(row[1].get('title')), _normalize_text(row[1].get('author'))),
+            )
+            for book_index, (source_book, payload) in enumerate(group_books):
+                book_node, created = _get_or_create_tree_book_from_library(
+                    user, tree, payload, source_book, year_node, book_index,
+                )
+                timeline_style = {
+                    **(book_node.style or {}),
+                    'generated_by': 'year_auto_tree',
+                    'timeline_group': group_index,
+                    'timeline_order': book_index,
+                    'timeline_role': 'book',
+                }
+                if book_node.style != timeline_style:
+                    book_node.style = timeline_style
+                    book_node.save(update_fields=['style'])
+                created_book_count += int(created)
+                reused_book_count += int(not created)
+                previous_tail = book_node
+
+        return {
+            'mode': self.mode,
+            'book_count': len(books),
+            'created_years': created_year_count,
+            'created_books': created_book_count,
+            'reused_books': reused_book_count,
+            'created_edges': created_edge_count,
+            'skipped': [],
+        }
 
 
 def _get_library_books(user):

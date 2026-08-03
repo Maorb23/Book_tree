@@ -343,7 +343,10 @@
 
     createAutoTree.disabled = true;
     createAutoTree.textContent = 'Creating...';
-    renderAutoTreeStatus('Shaping your shelf into author branches...');
+    const selectedMode = autoTreeMode?.value || 'author';
+    renderAutoTreeStatus(selectedMode === 'year'
+      ? 'Arranging your shelf into a year timeline...'
+      : 'Shaping your shelf into author branches...');
     try {
       const res = await fetch('/api/tree/auto-from-shelf/', {
         method: 'POST',
@@ -351,7 +354,7 @@
         body: JSON.stringify({
           shelf,
           shelf_type: shelfType,
-          mode: autoTreeMode?.value || 'author',
+          mode: selectedMode,
           destination,
           tree_id: treeId,
           tree_name: autoTreeName?.value || '',
@@ -360,7 +363,9 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || 'Could not create an auto tree from this shelf.');
       const summary = [
-        `${data.created_authors || 0} authors created`,
+        selectedMode === 'year'
+          ? `${data.created_years || 0} years created`
+          : `${data.created_authors || 0} authors created`,
         `${data.created_books || 0} books added`,
         `${data.reused_books || 0} books reused`,
       ].join(', ');

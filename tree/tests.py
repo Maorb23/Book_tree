@@ -17,6 +17,7 @@ from .email_backends import ResendEmailBackend
 from .models import (
     FriendRequest, Friendship, CommunityPost, Node, ImportedBook, BookReview,
     Tree, TreeVersion, ReadingChallenge, DailyPageLog, UserLoginDay,
+    TreeCredTransaction,
 )
 from .views import (
     _apply_known_book_metadata, _book_rank, _cache_key, _get_library_books,
@@ -1496,3 +1497,95 @@ class GoodreadsImportTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Personal best: 3 days')
+
+
+@override_settings(STATICFILES_STORAGE='django.contrib.staticfiles.storage.StaticFilesStorage')
+class DashboardGenreAndTimelineTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(username='timeline_reader', password='pass1234')
+
+    def test_login_redirects_to_dashboard(self):
+        response = self.client.post(reverse('tree:login'), {
+            'username': 'timeline_reader',
+            'password': 'pass1234',
+        })
+
+        self.assertRedirects(response, reverse('tree:dashboard'))
+
+    def test_landing_explains_the_four_step_workflow(self):
+        response = self.client.get(reverse('tree:landing'))
+
+        self.assertContains(response, 'How Readwoods works')
+        for label in ('Save books', 'Build a tree', 'Track progress', 'Share'):
+            self.assertContains(response, label)
+
+    def test_dashboard_syncs_treecred_without_duplicate_events(self):
+        tree = Tree.objects.create(user=self.user, name='Main Tree', is_default=True)
+        ImportedBook.objects.create(user=self.user, title='Dune', author='Frank Herbert')
+        self.client.force_login(self.user)
+
+        first = self.client.get(reverse('tree:dashboard'))
+        second = self.client.get(reverse('tree:dashboard'))
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.context['treecred_balance'], 6)
+        self.assertEqual(TreeCredTransaction.objects.filter(user=self.user).count(), 2)
+        self.assertContains(first, tree.name)
+
+    def test_genre_nodes_receive_their_default_artwork(self):
+        tree = Tree.objects.create(user=self.user, name='Genres', is_default=True)
+        Node.objects.create(user=self.user, tree=tree, title='Non-fiction', node_type='genre')
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:api-tree'), {'tree_id': tree.id})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['nodes'][0]['display_image_url'].endswith('/static/img/genres/non-fiction.webp'))
+
+    def test_year_auto_tree_groups_same_year_books_on_a_timeline(self):
+        for title, year in (('Dune', 1965), ('The Bell Jar', 1963), ('Another 1965 Book', 1965)):
+            ImportedBook.objects.create(
+                user=self.user,
+                title=title,
+                author='Test Author',
+                year=year,
+                shelf=Node.SHELF_READ,
+            )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('tree:api-tree-auto-from-shelf'),
+            data=json.dumps({
+                'shelf': Node.SHELF_READ,
+                'shelf_type': 'standard',
+                'mode': 'year',
+                'destination': 'new',
+                'tree_name': 'Publication timeline',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        tree = Tree.objects.get(user=self.user, name='Publication timeline')
+        self.assertEqual(tree.layout_mode, Tree.LAYOUT_TIMELINE)
+        self.assertEqual(tree.generation_mode, Tree.GENERATION_YEAR)
+        self.assertEqual(Node.objects.filter(tree=tree, node_type='year').count(), 2)
+        books_1965 = Node.objects.filter(tree=tree, node_type='book', year=1965)
+        self.assertEqual(books_1965.count(), 2)
+        self.assertTrue(all(book.parent.year == 1965 for book in books_1965))
+        self.assertEqual(response.json()['created_years'], 2)
+
+    def test_tree_goal_can_be_set_from_dashboard(self):
+        tree = Tree.objects.create(user=self.user, name='Classics', is_default=True)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse('tree:tree-goal-update', args=[tree.id]),
+            {'target_books': '30'},
+        )
+
+        self.assertRedirects(response, reverse('tree:dashboard'))
+        tree.refresh_from_db()
+        self.assertEqual(tree.target_books, 30)

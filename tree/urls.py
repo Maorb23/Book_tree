@@ -6,6 +6,7 @@ app_name = 'tree'
 urlpatterns = [
     # Pages
     path('', views.landing, name='landing'),
+    path('dashboard/', views.dashboard, name='dashboard'),
     path('community/', views.community_feed, name='community-feed'),
     path('community/my-posts/', views.community_my_posts, name='community-my-posts'),
     path('community/new/', views.community_create_post, name='community-create-post'),
@@ -36,6 +37,7 @@ urlpatterns = [
     path('api/shared-tree/<str:username>/<int:tree_id>/', views.shared_tree_data, name='api-shared-tree'),
     path('api/trees/', views.tree_list, name='api-tree-list'),
     path('api/trees/<int:tree_id>/', views.tree_detail, name='api-tree-detail'),
+    path('trees/<int:tree_id>/goal/', views.tree_goal_update, name='tree-goal-update'),
     path('api/tree/versions/', views.tree_version_list, name='api-tree-versions'),
     path('api/tree/versions/save/', views.tree_version_create, name='api-tree-version-create'),
     path('api/tree/versions/<int:version_id>/restore/', views.tree_version_restore, name='api-tree-version-restore'),

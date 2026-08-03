@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q
+from django.templatetags.static import static
 from .models import Node, Edge, FriendRequest, Friendship, CommunityPost, ImportedBook, Tree, TreeVersion, BookReview
 
 
@@ -8,7 +9,11 @@ class TreeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tree
-        fields = ['id', 'name', 'description', 'visibility', 'is_default', 'created_at', 'updated_at', 'node_count']
+        fields = [
+            'id', 'name', 'description', 'visibility', 'is_default',
+            'layout_mode', 'generation_mode', 'target_books',
+            'created_at', 'updated_at', 'node_count',
+        ]
 
     def get_node_count(self, obj):
         if hasattr(obj, 'node_count'):
@@ -19,13 +24,14 @@ class TreeSerializer(serializers.ModelSerializer):
 class NodeSerializer(serializers.ModelSerializer):
     children_count = serializers.SerializerMethodField()
     cover_url = serializers.SerializerMethodField()
+    display_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Node
         fields = [
             'id', 'tree', 'title', 'node_type', 'author', 'genre', 'series',
             'year', 'description', 'rating', 'isbn',
-            'cover_image', 'cover_url',
+            'cover_image', 'cover_url', 'display_image_url',
             'parent', 'pos_x', 'pos_y',
             'style', 'date_added', 'date_read',
             'shelf', 'custom_shelf',
@@ -43,6 +49,29 @@ class NodeSerializer(serializers.ModelSerializer):
         if url and request and url.startswith('/'):
             return request.build_absolute_uri(url)
         return url
+
+    def get_display_image_url(self, obj):
+        cover_url = self.get_cover_url(obj)
+        if cover_url:
+            return cover_url
+        if obj.node_type != 'genre':
+            return None
+        normalized = ''.join(character for character in obj.title.lower() if character.isalnum())
+        aliases = {
+            'fantasy': 'fantasy.webp',
+            'classic': 'classics.webp',
+            'classics': 'classics.webp',
+            'nonfiction': 'non-fiction.webp',
+            'history': 'history.webp',
+            'historical': 'history.webp',
+            'romance': 'romance.webp',
+        }
+        filename = aliases.get(normalized)
+        if not filename:
+            return None
+        url = static(f'img/genres/{filename}')
+        request = self.context.get('request')
+        return request.build_absolute_uri(url) if request else url
 
     def validate(self, attrs):
         """Protect tree integrity: disallow self-parent and cycles."""

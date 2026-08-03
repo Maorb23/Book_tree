@@ -6,6 +6,20 @@ import uuid
 
 
 class Tree(models.Model):
+    LAYOUT_ORGANIC = 'organic'
+    LAYOUT_TIMELINE = 'timeline'
+    LAYOUT_CHOICES = [
+        (LAYOUT_ORGANIC, 'Organic tree'),
+        (LAYOUT_TIMELINE, 'Year timeline'),
+    ]
+    GENERATION_MANUAL = 'manual'
+    GENERATION_AUTHOR = 'author'
+    GENERATION_YEAR = 'year'
+    GENERATION_CHOICES = [
+        (GENERATION_MANUAL, 'Manual'),
+        (GENERATION_AUTHOR, 'Authors'),
+        (GENERATION_YEAR, 'Years'),
+    ]
     VISIBILITY_PRIVATE = 'private'
     VISIBILITY_FRIENDS = 'friends'
     VISIBILITY_PUBLIC = 'public'
@@ -20,6 +34,9 @@ class Tree(models.Model):
     description = models.CharField(max_length=280, blank=True)
     visibility = models.CharField(max_length=12, choices=VISIBILITY_CHOICES, default=VISIBILITY_PRIVATE)
     is_default = models.BooleanField(default=False)
+    layout_mode = models.CharField(max_length=16, choices=LAYOUT_CHOICES, default=LAYOUT_ORGANIC)
+    generation_mode = models.CharField(max_length=16, choices=GENERATION_CHOICES, default=GENERATION_MANUAL)
+    target_books = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -51,6 +68,7 @@ class Node(models.Model):
         ("book", "Book"),
         ("author", "Author"),
         ("genre", "Genre"),
+        ("year", "Year"),
         ("series", "Series"),
         ("custom", "Custom"),
     ]
@@ -323,6 +341,34 @@ class UserLoginDay(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.login_date}"
+
+
+class TreeCredTransaction(models.Model):
+    REASON_TREE = 'tree_created'
+    REASON_BOOK = 'book_added'
+    REASON_CHOICES = [
+        (REASON_TREE, 'Tree created'),
+        (REASON_BOOK, 'Book added'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='treecred_transactions')
+    amount = models.IntegerField()
+    reason = models.CharField(max_length=32, choices=REASON_CHOICES)
+    event_key = models.CharField(max_length=180)
+    description = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'event_key'], name='unique_user_treecred_event'),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'created_at'], name='treecred_user_date_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username}: {self.amount} ({self.reason})"
 
 
 class FriendRequest(models.Model):

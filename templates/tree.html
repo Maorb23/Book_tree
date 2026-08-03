@@ -578,6 +578,7 @@
         </div>
       </div>
       <a href="{% url 'tree:tree' %}" class="btn btn--primary nav__tree-link">My Tree</a>
+      <a href="{% url 'tree:dashboard' %}" class="btn btn--ghost">Dashboard</a>
       <a href="{% url 'tree:stats' %}" class="btn btn--ghost">Stats</a>
       <div class="nav-profile">
         {% include "partials/user_avatar.html" %}
@@ -695,6 +696,7 @@
             <button type="button" class="type-btn active" data-type="book">📖 Book</button>
             <button type="button" class="type-btn" data-type="author">✍️ Author</button>
             <button type="button" class="type-btn" data-type="genre">🏷️ Genre</button>
+            <button type="button" class="type-btn" data-type="year">🗓️ Year</button>
             <button type="button" class="type-btn" data-type="series">📚 Series</button>
             <button type="button" class="type-btn" data-type="custom">⭐ Custom</button>
           </div>
@@ -896,6 +898,7 @@
     let allNodes = [];
     let allEdges = [];
     let nodeMap = {};
+    let treeLayoutMode = '{{ current_tree.layout_mode|default:"organic" }}';
     let collapsedNodes = new Set();
     let currentTransform = d3.zoomIdentity;
     const edgeDashMap = { solid: '', dashed: '10,4', dotted: '2,6', 'dash-dot': '12,4,2,4' };
@@ -1493,6 +1496,7 @@
           headers: { 'Cache-Control': 'no-cache' },
         });
         const data = await res.json();
+        treeLayoutMode = data.tree?.layout_mode || treeLayoutMode;
         allNodes = data.nodes || [];
         allEdges = data.edges || [];
         nodeMap = {};
@@ -1542,6 +1546,10 @@
     }
 
     function buildLayout() {
+      if (treeLayoutMode === 'timeline') {
+        buildTimelineLayout();
+        return;
+      }
       const roots = allNodes.filter(n => !n.parent);
       const childMap = {};
       allNodes.forEach(n => { childMap[n.id] = allNodes.filter(c => c.parent === n.id); });
@@ -1635,6 +1643,7 @@
       const visibleIds = new Set(allNodes.filter(n => !isHiddenByCollapse(n)).map(n => n.id));
 
       allNodes.forEach(node => {
+        if (treeLayoutMode === 'timeline') return;
         if (node.parent) return;
         if (!visibleIds.has(node.id)) return;
         const x1 = stumpTreeAnchor.x;
@@ -1672,12 +1681,16 @@
         const parent = nodeMap[node.parent];
         if (!parent) return;
 
-        const x1 = parent._x, y1 = parent._y - NODE_H * 0.46;
-        const x2 = node._x, y2 = node._y + NODE_H * 0.46;
+        const x1 = treeLayoutMode === 'timeline' ? parent._x + NODE_W / 2 : parent._x;
+        const y1 = treeLayoutMode === 'timeline' ? parent._y : parent._y - NODE_H * 0.46;
+        const x2 = treeLayoutMode === 'timeline' ? node._x - NODE_W / 2 : node._x;
+        const y2 = treeLayoutMode === 'timeline' ? node._y : node._y + NODE_H * 0.46;
         const depth = getNodeDepth(node);
         const theme = getTheme(node);
 
-        const path = branchPath(x1, y1, x2, y2, 0.45);
+        const path = treeLayoutMode === 'timeline'
+          ? timelinePath(x1, y1, x2, y2)
+          : branchPath(x1, y1, x2, y2, 0.45);
         const trunkWidth = Math.max(2.8, 6.8 - depth * 0.45);
         const branchWidth = Math.max(1.2, trunkWidth * 0.46);
         const parentVisual = getParentEdgeVisualStyle(node, theme.link || theme.glow, branchWidth);
@@ -1711,7 +1724,9 @@
 
         const theme = getTheme(src);
         const visual = getEdgeVisualStyle(edge, theme.glow);
-        const path = `M${src._x},${src._y} C${src._x},${(src._y + tgt._y)/2} ${tgt._x},${(src._y + tgt._y)/2} ${tgt._x},${tgt._y}`;
+        const path = treeLayoutMode === 'timeline'
+          ? timelinePath(src._x + NODE_W / 2, src._y, tgt._x - NODE_W / 2, tgt._y)
+          : `M${src._x},${src._y} C${src._x},${(src._y + tgt._y)/2} ${tgt._x},${(src._y + tgt._y)/2} ${tgt._x},${tgt._y}`;
         linksLayer.append('path')
           .attr('class', 'tree-link tree-link--custom')
           .attr('d', path)
@@ -1745,6 +1760,11 @@
       ].join(' ');
     }
 
+    function timelinePath(x1, y1, x2, y2) {
+      const midpoint = x1 + (x2 - x1) / 2;
+      return `M${x1},${y1} C${midpoint},${y1} ${midpoint},${y2} ${x2},${y2}`;
+    }
+
     function getNodeDepth(node) {
       let depth = 0;
       let current = nodeMap[node.parent];
@@ -1771,7 +1791,7 @@
         const x = node._x - NODE_W / 2;
         const y = node._y - NODE_H / 2;
 
-        const isGenre = node.node_type === 'genre' || node.node_type === 'series';
+        const isGenre = node.node_type === 'genre' || node.node_type === 'series' || node.node_type === 'year';
         const isCollapsed = collapsedNodes.has(node.id);
         const childCount = allNodes.filter(c => c.parent === node.id).length;
 
@@ -1810,9 +1830,9 @@
           .style('filter', 'url(#barkShadow)');
 
         const imgH = isGenre ? NODE_H * 0.65 : NODE_IMG_H;
-        const coverUrl = node.cover_url || node.cover_image || '';
+        const coverUrl = node.display_image_url || node.cover_url || node.cover_image || '';
 
-        if (coverUrl && !isGenre) {
+        if (coverUrl && node.node_type !== 'series' && node.node_type !== 'year') {
           const clipId = `clip-${node.id.replace(/-/g, '')}`;
           g.append('defs').append('clipPath')
             .attr('id', clipId)
@@ -1989,7 +2009,7 @@
         .attr('fill', '#f4ead8')
         .text(icon);
 
-      if (node.node_type === 'genre' || node.node_type === 'series') {
+      if (node.node_type === 'genre' || node.node_type === 'series' || node.node_type === 'year') {
         g.append('text')
           .attr('x', NODE_W / 2)
           .attr('y', imgH / 2 + badgeRadius + 16)
@@ -1998,7 +2018,7 @@
           .attr('font-weight', 600)
           .attr('letter-spacing', '0.06em')
           .attr('fill', 'rgba(255, 235, 205, 0.7)')
-          .text('GENRE');
+          .text(node.node_type === 'year' ? 'YEAR' : (node.node_type === 'series' ? 'SERIES' : 'GENRE'));
       }
 
       if (node.year) {
@@ -2161,7 +2181,7 @@
         const div = document.createElement('div');
         div.className = 'search-item';
         div.innerHTML = `
-          <img class="search-item__cover" src="${n.cover_url || n.cover_image || ''}" onerror="this.style.display='none'" loading="lazy">
+          <img class="search-item__cover" src="${n.display_image_url || n.cover_url || n.cover_image || ''}" onerror="this.style.display='none'" loading="lazy">
           <span><strong>${n.title}</strong><br><small style="color:#cbb29a">${n.author || n.genre || ''}</small></span>
         `;
         div.addEventListener('click', () => {
@@ -2287,8 +2307,8 @@
         : '';
 
       content.innerHTML = `
-        ${(node.cover_url || node.cover_image)
-          ? `<img class="sidebar-cover" src="${node.cover_url || node.cover_image}" loading="lazy" onerror="this.style.display='none'">`
+        ${(node.display_image_url || node.cover_url || node.cover_image)
+          ? `<img class="sidebar-cover" src="${node.display_image_url || node.cover_url || node.cover_image}" loading="lazy" onerror="this.style.display='none'">`
           : `<div class="sidebar-cover" style="display:flex;align-items:center;justify-content:center;font-size:3rem;background:var(--bg-dark)">${PLACEHOLDER_ICONS[node.genre]||'📖'}</div>`}
         <div class="sidebar-title">${node.title}</div>
         <div class="sidebar-meta">
@@ -2718,6 +2738,41 @@
     function getCsrf() {
       const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
       return cookie ? cookie.split('=')[1] : '';
+    }
+
+    function buildTimelineLayout() {
+      const groupGap = NODE_W * 2 + 220;
+      const bookGap = NODE_H + 56;
+      const groups = new Map();
+      allNodes.forEach(node => {
+        const rawGroup = Number(node.style?.timeline_group);
+        const group = Number.isFinite(rawGroup) ? rawGroup : 9999;
+        if (!groups.has(group)) groups.set(group, { year: null, books: [], other: [] });
+        const bucket = groups.get(group);
+        if (node.node_type === 'year') bucket.year = node;
+        else if (node.style?.timeline_role === 'book' || node.node_type === 'book') bucket.books.push(node);
+        else bucket.other.push(node);
+      });
+
+      [...groups.entries()].sort((a, b) => a[0] - b[0]).forEach(([, bucket], groupIndex) => {
+        const yearX = groupIndex * groupGap;
+        if (bucket.year) {
+          bucket.year._x = yearX;
+          bucket.year._y = 0;
+        }
+        bucket.books.sort((a, b) => Number(a.style?.timeline_order || 0) - Number(b.style?.timeline_order || 0));
+        const bookX = yearX + NODE_W + 150;
+        const startY = -((bucket.books.length - 1) * bookGap) / 2;
+        bucket.books.forEach((book, index) => {
+          book._x = bookX;
+          book._y = startY + index * bookGap;
+        });
+        bucket.other.forEach((node, index) => {
+          node._x = yearX;
+          node._y = NODE_H + 100 + index * bookGap;
+        });
+      });
+      stumpLayer.selectAll('*').remove();
     }
 
     function syncTreeEmptyState() {

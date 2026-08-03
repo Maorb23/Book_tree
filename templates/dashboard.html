@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Readwoods - Dashboard{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/landing.css' %}">
+<link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+{% endblock %}
+
+{% block body %}
+{% include "partials/main_nav.html" %}
+
+<main class="dashboard-page">
+  <header class="dashboard-hero">
+    <div>
+      <h1>Welcome back, {{ request.user.first_name|default:request.user.username }}</h1>
+      <p>Your books, goals, trees, and TreeCred are gathered here.</p>
+    </div>
+    <div class="dashboard-actions">
+      <a class="btn btn--primary" href="{% url 'tree:my-books' %}">Add a book</a>
+      <a class="btn btn--ghost" href="{% url 'tree:tree' %}">Open my tree</a>
+    </div>
+  </header>
+
+  <section class="dashboard-grid" aria-label="Reading overview">
+    <article class="dashboard-card dashboard-card--books">
+      <div class="dashboard-card__head">
+        <h2>My books</h2>
+        <a href="{% url 'tree:my-books' %}">View all {{ library_count }}</a>
+      </div>
+      {% if currently_reading %}
+        <h3>Currently reading</h3>
+        <div class="dashboard-book-list">
+          {% for book in currently_reading %}
+            <article class="dashboard-book">
+              {% if book.get_cover_url %}<img src="{{ book.get_cover_url }}" alt="" loading="lazy">{% else %}<span class="dashboard-book__fallback">BK</span>{% endif %}
+              <span><strong>{{ book.title }}</strong><small>{{ book.author|default:"Unknown author" }}</small></span>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="dashboard-empty">Move a book to Currently Reading to pick up where you left off.</p>
+      {% endif %}
+      {% if recent_books %}
+        <p class="dashboard-recent">Recently added: {% for book in recent_books %}<span>{{ book.title }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+    </article>
+
+    <article class="dashboard-card dashboard-card--challenge">
+      <div class="dashboard-card__head">
+        <h2>{{ challenge.year }} reading challenge</h2>
+        <a href="{% url 'tree:challenges' %}">Update goal</a>
+      </div>
+      <div class="dashboard-metric"><strong>{{ books_read }}</strong><span>of {{ challenge.target_books }} books</span></div>
+      <div class="dashboard-progress" role="progressbar" aria-valuenow="{{ book_percent }}" aria-valuemin="0" aria-valuemax="100">
+        <span style="width: {{ book_percent }}%"></span>
+      </div>
+      <p>{{ books_remaining }} book{{ books_remaining|pluralize }} remaining · {{ current_page_streak }} day reading streak</p>
+    </article>
+
+    <article class="dashboard-card dashboard-card--trees">
+      <div class="dashboard-card__head">
+        <h2>My trees</h2>
+        <a href="{% url 'tree:tree' %}">Open trees</a>
+      </div>
+      <div class="dashboard-tree-list">
+        {% for tree in trees %}
+          <article class="dashboard-tree">
+            <div class="dashboard-tree__summary">
+              <strong>{{ tree.name }}</strong>
+              <span>{{ tree.book_count }} book{{ tree.book_count|pluralize }} · {{ tree.get_visibility_display }}</span>
+            </div>
+            {% if tree.target_books %}
+              <div class="dashboard-progress" role="progressbar" aria-valuenow="{{ tree.progress_percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ tree.progress_percent }}%"></span></div>
+              <small>{{ tree.progress_percent }}% of {{ tree.target_books }}-book goal</small>
+            {% else %}
+              <small>Set a goal to track this tree’s progress.</small>
+            {% endif %}
+            <form method="post" action="{% url 'tree:tree-goal-update' tree.id %}" class="dashboard-tree__goal">
+              {% csrf_token %}
+              <label for="tree-goal-{{ tree.id }}">Book goal</label>
+              <input id="tree-goal-{{ tree.id }}" name="target_books" type="number" min="1" max="10000" value="{{ tree.target_books|default:'' }}" placeholder="e.g. 25">
+              <button class="btn btn--ghost btn--sm" type="submit">Save</button>
+            </form>
+          </article>
+        {% empty %}
+          <p class="dashboard-empty">Create your first tree to begin mapping your reading.</p>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="dashboard-card dashboard-card--treecred">
+      <div class="dashboard-card__head">
+        <h2>TreeCred</h2>
+        <a href="{% url 'tree:donations' %}">Learn more</a>
+      </div>
+      <div class="treecred-balance"><span>$</span>{{ treecred_amount }}</div>
+      <p>Earned by growing your library and creating trees.</p>
+      <div class="treecred-activity">
+        {% for transaction in treecred_transactions %}
+          <div><span>{{ transaction.description }}</span><strong>+{{ transaction.amount }}</strong></div>
+        {% empty %}
+          <p class="dashboard-empty">Your first tree or book will start your TreeCred balance.</p>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+</main>
+{% endblock %}
