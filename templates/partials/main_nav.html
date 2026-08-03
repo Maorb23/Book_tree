@@ -20,7 +20,7 @@
     <a href="{% url 'tree:tree' %}" class="nav__cta nav__tree-link">My Tree</a>
     <a href="{% url 'tree:stats' %}" class="nav__stats-link">Stats</a>
     {% if request.user.is_authenticated %}
-      <a href="{% url 'tree:dashboard' %}">Dashboard</a>
+      <a href="{% url 'tree:dashboard' %}" class="nav__dashboard-link">My Forest</a>
       <div class="nav-profile">
         {% include "partials/user_avatar.html" %}
         <span class="nav-dropdown-arrow" aria-hidden="true"></span>

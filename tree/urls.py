@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 from . import views
 
 app_name = 'tree'
@@ -6,7 +7,8 @@ app_name = 'tree'
 urlpatterns = [
     # Pages
     path('', views.landing, name='landing'),
-    path('dashboard/', views.dashboard, name='dashboard'),
+    path('my-forest/', views.dashboard, name='dashboard'),
+    path('dashboard/', RedirectView.as_view(pattern_name='tree:dashboard', permanent=False), name='dashboard-legacy'),
     path('community/', views.community_feed, name='community-feed'),
     path('community/my-posts/', views.community_my_posts, name='community-my-posts'),
     path('community/new/', views.community_create_post, name='community-create-post'),

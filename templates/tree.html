@@ -578,7 +578,7 @@
         </div>
       </div>
       <a href="{% url 'tree:tree' %}" class="btn btn--primary nav__tree-link">My Tree</a>
-      <a href="{% url 'tree:dashboard' %}" class="btn btn--ghost">Dashboard</a>
+      <a href="{% url 'tree:dashboard' %}" class="btn btn--ghost">My Forest</a>
       <a href="{% url 'tree:stats' %}" class="btn btn--ghost">Stats</a>
       <div class="nav-profile">
         {% include "partials/user_avatar.html" %}
@@ -894,6 +894,21 @@
       'Horror': 'HO',
       'default': 'BK',
     };
+
+    const CURATED_GENRE_NODES = [
+      { title: 'Fantasy', image: '{% static "img/genres/fantasy.webp" %}' },
+      { title: 'Classics', image: '{% static "img/genres/classics.webp" %}' },
+      { title: 'Non-fiction', image: '{% static "img/genres/non-fiction.webp" %}' },
+      { title: 'History', image: '{% static "img/genres/history.webp" %}' },
+      { title: 'Romance', image: '{% static "img/genres/romance.webp" %}' },
+    ].map(genre => ({
+      title: genre.title,
+      author: '',
+      genre: genre.title,
+      node_type: 'genre',
+      preview_url: genre.image,
+      label: genre.title,
+    }));
 
     let allNodes = [];
     let allEdges = [];
@@ -3039,7 +3054,11 @@
           selectedType = btn.dataset.type;
           updateTypeButtons();
           const q = fTitle.value.trim();
-          if (q.length >= 3) lookupBooksByTitle(q);
+          if (selectedType === 'genre' || q.length >= 3) lookupBooksByTitle(q);
+          else {
+            autocompleteOptions = [];
+            hideBookSuggestions();
+          }
         });
       });
 
@@ -3093,7 +3112,7 @@
         }
         const q = fTitle.value.trim();
         if (titleLookupTimer) clearTimeout(titleLookupTimer);
-        if (q.length < 3) {
+        if (selectedType !== 'genre' && q.length < 3) {
           autocompleteOptions = [];
           hideBookSuggestions();
           return;
@@ -3119,6 +3138,17 @@
         const lookupType = selectedType;
         const lookupSequence = ++titleLookupSequence;
         if (titleLookupRequest) titleLookupRequest.abort();
+        titleLookupRequest = null;
+
+        if (lookupType === 'genre') {
+          const normalizedQuery = query.toLowerCase();
+          autocompleteOptions = CURATED_GENRE_NODES.filter(item => (
+            !normalizedQuery || item.title.toLowerCase().includes(normalizedQuery)
+          ));
+          renderBookSuggestions();
+          return;
+        }
+
         titleLookupRequest = new AbortController();
         try {
           const endpoint = lookupType === 'author' ? '/api/author-search/' : '/api/book-search/';
@@ -3152,10 +3182,13 @@
       function renderBookSuggestions() {
         if (!bookSuggestions) return;
         bookSuggestions.innerHTML = autocompleteOptions.map((item, index) => {
-          const cover = item.cover_url
-            ? `<img class="book-autocomplete__cover" src="${escapeHtml(item.cover_url)}" alt="">`
+          const suggestionImage = item.cover_url || item.preview_url;
+          const cover = suggestionImage
+            ? `<img class="book-autocomplete__cover" src="${escapeHtml(suggestionImage)}" alt="">`
             : `<span class="book-autocomplete__cover">Book</span>`;
-          const meta = [item.author || 'Unknown author', item.genre, item.year && `(${item.year})`].filter(Boolean).join(' - ');
+          const meta = item.node_type === 'genre'
+            ? 'Curated genre artwork'
+            : [item.author || 'Unknown author', item.genre, item.year && `(${item.year})`].filter(Boolean).join(' - ');
           return `
             <button type="button" class="book-autocomplete__item" role="option" data-index="${index}">
               ${cover}
@@ -3201,6 +3234,12 @@
         if (item.node_type === 'author') {
           fGenre.value = '';
           fIsbn.value = '';
+        }
+        if (item.node_type === 'genre') {
+          fAuthor.value = '';
+          fIsbn.value = '';
+          fCoverUrl.value = '';
+          coverPreview.innerHTML = `<img src="${escapeHtml(item.preview_url || '')}" style="width:100%;height:100%;object-fit:cover">`;
         }
         populateFromBookInfo(item, { force: true });
         fTitle.value = item.title || fTitle.value;

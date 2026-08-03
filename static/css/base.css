@@ -104,7 +104,8 @@ body {
 
 .nav__cta,
 .nav__tree-link,
-.nav__stats-link {
+.nav__stats-link,
+.nav__dashboard-link {
   background: rgba(87, 201, 122, 0.16);
   border: 1px solid rgba(87, 201, 122, 0.42);
   color: #91eba4;

@@ -251,5 +251,5 @@ REST_FRAMEWORK = {
 }
 
 LOGIN_URL = '/login/'
-LOGIN_REDIRECT_URL = '/tree/'
+LOGIN_REDIRECT_URL = '/my-forest/'
 LOGOUT_REDIRECT_URL = '/login/'

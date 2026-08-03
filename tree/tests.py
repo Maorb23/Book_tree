@@ -1505,13 +1505,29 @@ class DashboardGenreAndTimelineTests(TestCase):
         cache.clear()
         self.user = User.objects.create_user(username='timeline_reader', password='pass1234')
 
-    def test_login_redirects_to_dashboard(self):
+    def test_login_redirects_to_my_forest(self):
         response = self.client.post(reverse('tree:login'), {
             'username': 'timeline_reader',
             'password': 'pass1234',
         })
 
+        self.assertEqual(reverse('tree:dashboard'), '/my-forest/')
         self.assertRedirects(response, reverse('tree:dashboard'))
+
+    def test_legacy_dashboard_url_redirects_to_my_forest(self):
+        response = self.client.get('/dashboard/')
+
+        self.assertRedirects(response, reverse('tree:dashboard'), fetch_redirect_response=False)
+
+    def test_tree_genre_search_uses_only_curated_genre_artwork(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:tree'))
+
+        self.assertContains(response, "const CURATED_GENRE_NODES = [")
+        for filename in ('fantasy.webp', 'classics.webp', 'non-fiction.webp', 'history.webp', 'romance.webp'):
+            self.assertContains(response, f'/static/img/genres/{filename}')
+        self.assertContains(response, "if (lookupType === 'genre')")
 
     def test_landing_explains_the_four_step_workflow(self):
         response = self.client.get(reverse('tree:landing'))
