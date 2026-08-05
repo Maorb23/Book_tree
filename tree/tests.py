@@ -1552,6 +1552,14 @@ class DashboardGenreAndTimelineTests(TestCase):
         self.assertContains(response, 'id="mobileTreeList"')
         self.assertContains(response, '/static/js/tree_mobile.js')
 
+    def test_tree_loads_d3_from_local_static_assets(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('tree:tree'))
+
+        self.assertContains(response, '/static/vendor/d3/d3.v7.9.0.min.js')
+        self.assertNotContains(response, 'https://d3js.org')
+
     def test_mobile_tree_reuses_existing_tree_endpoints(self):
         self.client.force_login(self.user)
 
