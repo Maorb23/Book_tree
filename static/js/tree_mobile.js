@@ -96,7 +96,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'mobile-tree-node';
-      button.style.setProperty('--tree-depth', String(Math.min(depth, 4)));
+      button.style.setProperty('--tree-indent', `${Math.min(depth, 4) * 14}px`);
 
       const imageUrl = node.display_image_url || node.cover_url || node.cover_image || '';
       const visual = imageUrl ? document.createElement('img') : document.createElement('span');

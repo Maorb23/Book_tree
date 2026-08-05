@@ -26,7 +26,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 1000;
+    z-index: 400;
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     min-height: calc(var(--mobile-bottom-bar) + env(safe-area-inset-bottom));
@@ -323,8 +323,8 @@
   }
 
   .mobile-tree-node {
-    width: calc(100% - min(var(--tree-depth, 0) * 14px, 56px));
-    margin-left: min(var(--tree-depth, 0) * 14px, 56px);
+    width: calc(100% - var(--tree-indent, 0px));
+    margin-left: var(--tree-indent, 0px);
     min-height: 64px;
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
