@@ -2,6 +2,10 @@
   display: none;
 }
 
+.mobile-top-profile {
+  display: none;
+}
+
 @media (max-width: 768px) {
   :root {
     --mobile-top-bar: 64px;
@@ -28,7 +32,7 @@
     bottom: 0;
     z-index: 400;
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     min-height: calc(var(--mobile-bottom-bar) + env(safe-area-inset-bottom));
     padding: 5px 6px calc(5px + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(130, 156, 118, 0.34);
@@ -158,6 +162,82 @@
     line-height: 1;
   }
 
+  .mobile-top-profile {
+    position: relative;
+    z-index: 410;
+    display: block;
+    justify-self: end;
+  }
+
+  .mobile-top-profile > summary {
+    min-width: 48px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    list-style: none;
+    color: #dcebdc;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-top-profile > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .mobile-top-profile .mobile-profile-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mobile-top-profile__arrow {
+    width: 7px;
+    height: 7px;
+    border-right: 1px solid currentColor;
+    border-bottom: 1px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform 0.16s ease;
+  }
+
+  .mobile-top-profile[open] .mobile-top-profile__arrow {
+    transform: translateY(2px) rotate(225deg);
+  }
+
+  .mobile-top-profile__panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: min(220px, calc(100vw - 24px));
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid rgba(130, 156, 118, 0.36);
+    border-radius: 12px;
+    background: rgba(9, 14, 10, 0.99);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  }
+
+  .mobile-top-profile__panel a {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #dcebdc;
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  .mobile-top-profile__panel a:hover,
+  .mobile-top-profile__panel a:focus-visible {
+    background: rgba(87, 201, 122, 0.15);
+  }
+
+  .mobile-top-profile[data-current="true"] .mobile-profile-icon {
+    box-shadow: 0 0 0 3px rgba(87, 201, 122, 0.28);
+  }
+
   @media (max-width: 380px) {
     .mobile-bottom-nav > a,
     .mobile-bottom-menu > summary {
@@ -204,7 +284,7 @@
 
   .tree-workspace .tree-workspace-nav {
     height: var(--mobile-top-bar);
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 10px;
     padding: 10px 12px;
   }

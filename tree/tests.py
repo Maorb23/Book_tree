@@ -1541,7 +1541,8 @@ class DashboardGenreAndTimelineTests(TestCase):
         for label in ('Challenges', 'Stats', 'My Profile', 'Badges', 'Donations', 'Logout'):
             self.assertContains(response, label)
         self.assertContains(response, 'mobile-bottom-menu--community')
-        self.assertContains(response, 'mobile-bottom-menu--profile')
+        self.assertContains(response, 'class="mobile-top-profile"')
+        self.assertNotContains(response, 'mobile-bottom-menu--profile')
         for label in ('Feed', 'Find People', 'Requests', 'Friends', 'My Posts'):
             self.assertContains(response, label)
 
@@ -1555,6 +1556,7 @@ class DashboardGenreAndTimelineTests(TestCase):
         self.assertContains(response, 'data-tree-view="list"')
         self.assertContains(response, 'id="mobileTreeList"')
         self.assertContains(response, '/static/js/tree_mobile.js')
+        self.assertContains(response, 'class="mobile-top-profile"')
 
     def test_tree_loads_d3_from_local_static_assets(self):
         self.client.force_login(self.user)

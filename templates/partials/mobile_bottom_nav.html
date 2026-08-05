@@ -29,28 +29,6 @@
         <a href="{% url 'tree:logout' %}">Logout</a>
       </div>
     </details>
-    {% with profile=request.user.profile %}
-      <details class="mobile-bottom-menu mobile-bottom-menu--profile" {% if request.resolver_match.url_name == 'my-profile' %}data-current="true"{% endif %}>
-        <summary aria-label="Profile menu">
-          <span class="mobile-profile-icon" aria-hidden="true">
-            {% if profile.avatar_url %}
-              <img src="{{ profile.avatar_url }}" alt="" referrerpolicy="no-referrer">
-            {% else %}
-              <b>{{ profile.avatar_symbol|default:"🌲" }}</b>
-            {% endif %}
-          </span>
-          <small>Profile <i class="mobile-menu-arrow" aria-hidden="true"></i></small>
-        </summary>
-        <div>
-          <a href="{% url 'tree:my-profile' %}">My Profile</a>
-          <a href="{% url 'tree:badges' %}">Badges</a>
-          <a href="{% url 'tree:my-books' %}">My Books</a>
-          <a href="{% url 'tree:challenges' %}">Challenges</a>
-          <a href="{% url 'tree:donations' %}">Donations</a>
-          <a href="{% url 'tree:logout' %}">Logout</a>
-        </div>
-      </details>
-    {% endwith %}
   {% else %}
     <a href="{% url 'tree:landing' %}" aria-current="page"><span aria-hidden="true">⌂</span><small>Home</small></a>
     <a href="{% url 'tree:community-feed' %}"><span aria-hidden="true">♧</span><small>Community</small></a>
