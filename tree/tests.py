@@ -1536,9 +1536,13 @@ class DashboardGenreAndTimelineTests(TestCase):
 
         self.assertContains(response, '/static/css/mobile.css')
         self.assertContains(response, 'class="mobile-bottom-nav"')
-        for label in ('Forest', 'Books', 'Tree', 'Community', 'More'):
+        for label in ('Forest', 'Books', 'Tree', 'More'):
             self.assertContains(response, f'<small>{label}</small>', html=True)
         for label in ('Challenges', 'Stats', 'My Profile', 'Badges', 'Donations', 'Logout'):
+            self.assertContains(response, label)
+        self.assertContains(response, 'mobile-bottom-menu--community')
+        self.assertContains(response, 'mobile-bottom-menu--profile')
+        for label in ('Feed', 'Find People', 'Requests', 'Friends', 'My Posts'):
             self.assertContains(response, label)
 
     def test_tree_page_exposes_mobile_canvas_and_list_modes(self):
